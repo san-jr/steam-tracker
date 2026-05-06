@@ -760,11 +760,32 @@ function usdCentsToUah(cents) {
   return Math.round((cents / 100) * USD_TO_UAH);
 }
 
+// CORS proxy wrapper — tries allorigins first, falls back to corsproxy.io
+async function fetchWithProxy(url) {
+  const proxies = [
+    u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+  for (const makeUrl of proxies) {
+    try {
+      const r = await fetch(makeUrl(url));
+      if (!r.ok) continue;
+      // allorigins wraps result in { contents: "..." }
+      const raw = await r.text();
+      let text = raw;
+      try {
+        const wrapper = JSON.parse(raw);
+        if (wrapper && typeof wrapper.contents === 'string') text = wrapper.contents;
+      } catch(e) {}
+      return JSON.parse(text);
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
 async function fetchSteamSpy(appid) {
   try {
-    const r = await fetch(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`);
-    if (!r.ok) return null;
-    const d = await r.json();
+    const d = await fetchWithProxy(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`);
     if (!d || !d.appid) return null;
     return d;
   } catch(e) { return null; }
@@ -772,9 +793,8 @@ async function fetchSteamSpy(appid) {
 
 async function searchSteamByName(name) {
   try {
-    const r = await fetch(`https://steamspy.com/api.php?request=search&term=${encodeURIComponent(name)}`);
-    if (!r.ok) return null;
-    const d = await r.json();
+    const d = await fetchWithProxy(`https://steamspy.com/api.php?request=search&term=${encodeURIComponent(name)}`);
+    if (!d) return null;
     const keys = Object.keys(d);
     if (!keys.length) return null;
     const lname = name.toLowerCase();
