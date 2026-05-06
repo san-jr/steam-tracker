@@ -340,6 +340,25 @@ body {
 .add-cart-btn.in-cart-btn:hover { background: rgba(248,81,73,.1); border-color: var(--red); color: var(--red); }
 .add-cart-btn svg { width: 13px; height: 13px; fill: currentColor; }
 
+.card-footer-row { display: flex; gap: 6px; }
+.delete-game-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text3); padding: 6px 8px; border-radius: 5px;
+  cursor: pointer; font-size: 12px; font-family: var(--font-body);
+  transition: all .15s; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.delete-game-btn:hover { background: rgba(248,81,73,.12); border-color: var(--red2); color: var(--red); }
+.delete-game-btn svg { width: 13px; height: 13px; fill: currentColor; }
+
+.card-editions { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.edition-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 10px; color: var(--text3); font-family: var(--font-mono);
+  border-top: 1px solid var(--border); padding-top: 2px;
+}
+.edition-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px; }
+.edition-price { color: var(--text2); white-space: nowrap; }
+
 .card-loading {
   width: 100%; height: 240px;
   display: flex; align-items: center; justify-content: center;
@@ -507,7 +526,7 @@ body {
     <div class="sidebar-section">
       <button id="add-game-btn" onclick="openAddModal()">
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        Добавить игру1
+        Добавить игру
       </button>
     </div>
 
@@ -740,27 +759,10 @@ function load() {
 }
 
 // ══════════════════════════════════════════
-// STEAM API — SteamSpy
-// Requires serving via HTTP (not file://)
-// Use запустить.py to start local server
+// STEAM API — Store API (точные UAH цены) + SteamSpy (теги/отзывы)
 // ══════════════════════════════════════════
 
-// USD → UAH rate (SteamSpy prices are in USD cents)
-let USD_TO_UAH = 41.5;
-(async () => {
-  try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD');
-    const d = await r.json();
-    if (d && d.rates && d.rates.UAH) USD_TO_UAH = d.rates.UAH;
-  } catch(e) {}
-})();
-
-function usdCentsToUah(cents) {
-  if (cents == null || cents < 0) return null;
-  return Math.round((cents / 100) * USD_TO_UAH);
-}
-
-// CORS proxy wrapper — tries allorigins first, falls back to corsproxy.io
+// CORS proxy wrapper
 async function fetchWithProxy(url) {
   const proxies = [
     u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
@@ -770,7 +772,6 @@ async function fetchWithProxy(url) {
     try {
       const r = await fetch(makeUrl(url));
       if (!r.ok) continue;
-      // allorigins wraps result in { contents: "..." }
       const raw = await r.text();
       let text = raw;
       try {
@@ -783,6 +784,18 @@ async function fetchWithProxy(url) {
   return null;
 }
 
+// Steam Store API — returns UAH prices directly for UA region
+async function fetchSteamStore(appid) {
+  try {
+    const d = await fetchWithProxy(
+      `https://store.steampowered.com/api/appdetails?appids=${appid}&cc=ua&l=russian`
+    );
+    if (!d || !d[appid] || !d[appid].success) return null;
+    return d[appid].data;
+  } catch(e) { return null; }
+}
+
+// SteamSpy — only for review counts & tags
 async function fetchSteamSpy(appid) {
   try {
     const d = await fetchWithProxy(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`);
@@ -803,7 +816,18 @@ async function searchSteamByName(name) {
   } catch(e) { return null; }
 }
 
-// Parse SteamSpy tags into feature categories
+function parseCatsFromStore(categories) {
+  if (!Array.isArray(categories)) return { singleplayer: false, multiplayer: false, achievements: false, cards: false, controller: false };
+  const ids = new Set(categories.map(c => c.id));
+  return {
+    singleplayer: ids.has(2),
+    multiplayer:  ids.has(1) || ids.has(9) || ids.has(38),
+    achievements: ids.has(22),
+    cards:        ids.has(29),
+    controller:   ids.has(28) || ids.has(18),
+  };
+}
+
 function parseCatsFromTags(tags) {
   if (!tags) return { singleplayer: false, multiplayer: false, achievements: false, cards: false, controller: false };
   const t = Object.keys(tags).map(k => k.toLowerCase());
@@ -814,11 +838,6 @@ function parseCatsFromTags(tags) {
     cards:        t.some(x => x.includes('trading card')),
     controller:   t.some(x => x.includes('controller') || x.includes('gamepad')),
   };
-}
-
-function parseGenresFromSpy(genre) {
-  if (!genre) return [];
-  return genre.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 }
 
 function calcReviewScore(pos, neg) {
@@ -835,34 +854,76 @@ function reviewScoreClass(score) {
   return             { label: 'В основном отрицательные',         key: 'negative',                 color: '#f85149' };
 }
 
-function parsePriceFromSpy(spy) {
-  if (!spy) return { current: null, original: null, discount: 0, free: false };
-  // price == -1 means not available / region-locked
-  if (spy.price === -1) return { current: null, original: null, discount: 0, free: false };
-  if (spy.price === 0 && spy.initialprice === 0) return { current: 0, original: 0, discount: 0, free: true };
-  const current  = usdCentsToUah(spy.price);
-  const original = usdCentsToUah(spy.initialprice > 0 ? spy.initialprice : spy.price);
-  const discount = spy.discount ? parseInt(spy.discount) : 0;
+// Parse price from Steam Store price_overview (values in 1/100 UAH)
+function parsePriceFromStore(priceOverview) {
+  if (!priceOverview) return { current: null, original: null, discount: 0, free: false };
+  if (priceOverview.final === 0 && priceOverview.initial === 0) return { current: 0, original: 0, discount: 0, free: true };
+  const current  = Math.round(priceOverview.final / 100);
+  const original = Math.round(priceOverview.initial / 100);
+  const discount = priceOverview.discount_percent || 0;
   return { current, original, discount, free: false };
 }
 
-async function buildGameObject(appid) {
-  const spy = await fetchSteamSpy(appid);
-  if (!spy || !spy.name) return null;
+// Parse package groups to find editions (Deluxe, Ultimate, etc.)
+function parseEditionsFromStore(packageGroups) {
+  if (!Array.isArray(packageGroups) || packageGroups.length === 0) return [];
+  const editions = [];
+  for (const group of packageGroups) {
+    if (!Array.isArray(group.subs)) continue;
+    for (const sub of group.subs) {
+      if (!sub.option_text || sub.price_in_cents_with_discount == null) continue;
+      const price = Math.round(sub.price_in_cents_with_discount / 100);
+      // Remove trailing price string like "(49,00₴)"
+      let name = sub.option_text.replace(/\s*[\(\[]?[\d\s,\.]+[₴$€£][^\)\]]*[\)\]]?\s*$/, '').trim();
+      if (!name) continue;
+      editions.push({ name, price });
+    }
+  }
+  const seen = new Set();
+  return editions.filter(e => { if (seen.has(e.name)) return false; seen.add(e.name); return true; });
+}
 
-  const price       = parsePriceFromSpy(spy);
-  const cats        = parseCatsFromTags(spy.tags);
-  const genres      = parseGenresFromSpy(spy.genre);
-  const reviewScore = calcReviewScore(spy.positive || 0, spy.negative || 0);
-  const image       = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
+async function buildGameObject(appid) {
+  // Fetch Store API and SteamSpy in parallel
+  const [storeData, spyData] = await Promise.all([
+    fetchSteamStore(appid),
+    fetchSteamSpy(appid),
+  ]);
+
+  if (!storeData && !spyData) return null;
+  const name = storeData?.name || spyData?.name;
+  if (!name) return null;
+
+  const price = storeData?.is_free
+    ? { current: 0, original: 0, discount: 0, free: true }
+    : parsePriceFromStore(storeData?.price_overview);
+
+  const cats = storeData?.categories
+    ? parseCatsFromStore(storeData.categories)
+    : parseCatsFromTags(spyData?.tags);
+
+  const genres = storeData?.genres
+    ? storeData.genres.map(g => g.description.toLowerCase())
+    : (spyData?.genre ? spyData.genre.toLowerCase().split(',').map(s => s.trim()).filter(Boolean) : []);
+
+  const editions = storeData?.package_groups
+    ? parseEditionsFromStore(storeData.package_groups)
+    : [];
+
+  const reviewScore = spyData
+    ? calcReviewScore(spyData.positive || 0, spyData.negative || 0)
+    : null;
+
+  const image = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
 
   return {
     appid:      String(appid),
-    name:       spy.name,
+    name,
     image,
     price,
     cats,
     genres,
+    editions,
     reviewScore,
     reviewInfo: reviewScore ? reviewScoreClass(reviewScore) : null,
     lowestPrice: price.current,
@@ -870,7 +931,6 @@ async function buildGameObject(appid) {
     lastUpdated: Date.now(),
   };
 }
-
 // ══════════════════════════════════════════
 // ADD GAME MODAL
 // ══════════════════════════════════════════
@@ -1165,11 +1225,17 @@ function renderGames() {
         ${reviewHtml}
         <div class="card-pricing" style="margin-top:auto;padding-top:4px">${priceHtml}</div>
       </div>
+      ${g.editions && g.editions.length > 1 ? `<div class="card-editions">${g.editions.slice(0,3).map(e => `<div class="edition-row"><span class="edition-name">${esc(e.name)}</span><span class="edition-price">${formatPrice(e.price)}</span></div>`).join('')}</div>` : ''}
       <div class="card-footer">
-        <button class="add-cart-btn ${inCart ? 'in-cart-btn' : ''}" onclick="toggleCart2('${g.appid}')">
-          <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6" stroke-width="1.5" fill="none"/><path d="M16 10a4 4 0 0 1-8 0" stroke-width="1.5" fill="none"/></svg>
-          ${inCart ? 'Убрать из корзины' : 'В корзину'}
-        </button>
+        <div class="card-footer-row">
+          <button class="add-cart-btn ${inCart ? 'in-cart-btn' : ''}" onclick="toggleCart2('${g.appid}')" style="flex:1">
+            <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6" stroke-width="1.5" fill="none"/><path d="M16 10a4 4 0 0 1-8 0" stroke-width="1.5" fill="none"/></svg>
+            ${inCart ? 'Убрать из корзины' : 'В корзину'}
+          </button>
+          <button class="delete-game-btn" onclick="deleteGame('${g.appid}')" title="Удалить игру">
+            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>
       </div>
     `;
     grid.appendChild(card);
@@ -1177,6 +1243,17 @@ function renderGames() {
 
   renderCart();
   updateBalanceUI();
+}
+
+// ══════════════════════════════════════════
+// DELETE GAME
+// ══════════════════════════════════════════
+function deleteGame(appid) {
+  games = games.filter(g => g.appid !== String(appid));
+  cart = cart.filter(id => id !== String(appid));
+  if (filteredIds) filteredIds = filteredIds.filter(id => id !== String(appid));
+  save();
+  applyFilters();
 }
 
 // ══════════════════════════════════════════
@@ -1271,13 +1348,17 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
     bar.style.width = (done / total * 100) + '%';
 
     try {
-      const spy = await fetchSteamSpy(g.appid);
-      if (spy) {
-        const price = parsePriceFromSpy(spy);
+      const storeData = await fetchSteamStore(g.appid);
+      if (storeData) {
+        const price = storeData.is_free
+          ? { current: 0, original: 0, discount: 0, free: true }
+          : parsePriceFromStore(storeData.price_overview);
         games[i].price = price;
-        // update lowest price
         if (price.current != null && (games[i].lowestPrice == null || price.current < games[i].lowestPrice)) {
           games[i].lowestPrice = price.current;
+        }
+        if (storeData.package_groups) {
+          games[i].editions = parseEditionsFromStore(storeData.package_groups);
         }
         games[i].lastUpdated = Date.now();
       }
@@ -1287,9 +1368,8 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
     bar.style.width = (done / total * 100) + '%';
     info.textContent = `${done} / ${total}`;
 
-    // delay between requests to avoid rate limiting
     if (i < games.length - 1) {
-      await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
+      await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
     }
   }
 
