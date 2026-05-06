@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steam Wishlist Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --bg3: #1c2128;
+  --bg4: #22272e;
+  --border: #30363d;
+  --border2: #444c56;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #6e7681;
+  --accent: #1a9fff;
+  --accent2: #0d6efd;
+  --green: #3fb950;
+  --green2: #238636;
+  --red: #f85149;
+  --red2: #da3633;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --purple: #8b5cf6;
+  --teal: #2ea6a6;
+  --card-radius: 10px;
+  --font-head: 'Rajdhani', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── HEADER ─── */
+#header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(13,17,23,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; height: 56px;
+}
+
+#header .logo {
+  font-family: var(--font-head);
+  font-size: 20px; font-weight: 700; letter-spacing: 1px;
+  color: var(--accent);
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+#header .logo svg { width: 22px; height: 22px; fill: var(--accent); }
+
+#header .spacer { flex: 1; }
+
+.header-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); padding: 6px 14px; border-radius: 6px;
+  cursor: pointer; font-family: var(--font-body); font-size: 13px;
+  display: flex; align-items: center; gap: 6px;
+  transition: all .18s; white-space: nowrap;
+}
+.header-btn:hover { border-color: var(--border2); color: var(--text); background: var(--bg4); }
+.header-btn.primary { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.header-btn.primary:hover { background: #0a58ca; border-color: #0a58ca; }
+.header-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+/* balance */
+#balance-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 12px; cursor: pointer;
+  transition: all .18s; user-select: none;
+}
+#balance-wrap:hover { border-color: var(--border2); }
+#balance-wrap.danger { border-color: var(--red2); background: rgba(248,81,73,.08); }
+#balance-label { font-size: 11px; color: var(--text3); font-family: var(--font-mono); }
+#balance-val {
+  font-family: var(--font-mono); font-weight: 500; font-size: 14px;
+  color: var(--green); min-width: 80px;
+}
+#balance-wrap.danger #balance-val { color: var(--red); }
+
+/* cart icon */
+#cart-toggle {
+  position: relative; cursor: pointer;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px;
+  transition: all .18s; display: flex; align-items: center;
+}
+#cart-toggle:hover { border-color: var(--border2); }
+#cart-toggle svg { width: 18px; height: 18px; fill: var(--text2); }
+#cart-badge {
+  position: absolute; top: -6px; right: -6px;
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 600; font-family: var(--font-mono);
+  border-radius: 999px; min-width: 18px; height: 18px;
+  align-items: center; justify-content: center;
+  padding: 0 4px; display: none;
+}
+
+/* ─── LAYOUT ─── */
+#layout {
+  display: flex; height: calc(100vh - 56px);
+}
+
+/* ─── SIDEBAR ─── */
+#sidebar {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 16px 0;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+.sidebar-section { padding: 0 16px 16px; }
+.sidebar-title {
+  font-family: var(--font-head); font-size: 11px; font-weight: 600;
+  letter-spacing: 1.5px; color: var(--text3); text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+#add-game-btn {
+  width: 100%; background: var(--green2); border: 1px solid var(--green);
+  color: #fff; padding: 9px 14px; border-radius: 6px;
+  cursor: pointer; font-family: var(--font-head); font-size: 15px;
+  font-weight: 600; letter-spacing: 0.5px;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: all .18s;
+}
+#add-game-btn:hover { background: #2ea043; }
+#add-game-btn svg { width: 15px; height: 15px; fill: #fff; }
+
+.filter-sep { height: 1px; background: var(--border); margin: 4px 0 12px; }
+
+.filter-group { margin-bottom: 14px; }
+.filter-label {
+  font-size: 12px; color: var(--text2); margin-bottom: 7px; display: block;
+}
+
+.filter-check {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; padding: 3px 0; font-size: 13px; color: var(--text2);
+  transition: color .15s; user-select: none;
+}
+.filter-check:hover { color: var(--text); }
+.filter-check input[type=checkbox] {
+  accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer;
+}
+
+.filter-select {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 8px; border-radius: 5px; font-size: 12px;
+  font-family: var(--font-body); cursor: pointer;
+}
+.filter-select:focus { outline: none; border-color: var(--accent); }
+
+.price-range { display: flex; flex-direction: column; gap: 6px; }
+.price-inputs { display: flex; gap: 6px; }
+.price-input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 8px; border-radius: 5px;
+  font-family: var(--font-mono); font-size: 12px;
+}
+.price-input:focus { outline: none; border-color: var(--accent); }
+
+.toggle-switch {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0;
+}
+.toggle-label { font-size: 12px; color: var(--text2); }
+.toggle {
+  position: relative; width: 32px; height: 18px; cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: var(--border2);
+  border-radius: 18px; transition: .2s;
+}
+.toggle-slider:before {
+  content: ''; position: absolute;
+  left: 2px; top: 2px;
+  width: 14px; height: 14px;
+  background: #fff; border-radius: 50%; transition: .2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--accent); }
+.toggle input:checked + .toggle-slider:before { transform: translateX(14px); }
+
+.reset-filters {
+  width: 100%; background: transparent; border: 1px solid var(--border);
+  color: var(--text3); padding: 6px; border-radius: 5px;
+  cursor: pointer; font-size: 12px; transition: all .15s;
+  margin-top: 4px;
+}
+.reset-filters:hover { border-color: var(--border2); color: var(--text2); }
+
+/* ─── MAIN ─── */
+#main {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+}
+
+#toolbar {
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 10;
+}
+
+#search-input {
+  flex: 1; min-width: 160px; max-width: 280px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 7px 12px; border-radius: 6px;
+  font-family: var(--font-body); font-size: 13px;
+}
+#search-input:focus { outline: none; border-color: var(--accent); }
+#search-input::placeholder { color: var(--text3); }
+
+.sort-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); padding: 6px 12px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; transition: all .15s;
+  display: flex; align-items: center; gap: 5px;
+}
+.sort-btn:hover, .sort-btn.active { border-color: var(--accent); color: var(--accent); }
+
+#game-count { font-size: 12px; color: var(--text3); margin-left: auto; }
+
+/* ─── CARDS GRID ─── */
+#games-grid {
+  padding: 20px; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px; align-content: start;
+}
+
+.game-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  transition: border-color .2s, transform .15s;
+  cursor: default;
+  position: relative;
+  display: flex; flex-direction: column;
+}
+.game-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+.game-card.in-cart { border-color: var(--accent); }
+.game-card.in-cart::after {
+  content: '✓ В КОРЗИНЕ';
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(26,159,255,.85);
+  color: #fff; font-size: 10px; font-weight: 600;
+  font-family: var(--font-head); letter-spacing: 1px;
+  padding: 3px 7px; border-radius: 4px;
+}
+
+.card-img {
+  width: 100%; height: 110px; object-fit: cover; display: block;
+  background: var(--bg3);
+}
+.card-img-placeholder {
+  width: 100%; height: 110px;
+  background: linear-gradient(135deg, var(--bg3) 0%, var(--bg4) 100%);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3); font-size: 11px;
+}
+
+.card-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+.card-title {
+  font-family: var(--font-head); font-size: 15px; font-weight: 600;
+  color: var(--text); line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  font-family: var(--font-mono); font-weight: 500;
+}
+.badge-green { background: rgba(63,185,80,.15); color: var(--green); }
+.badge-blue { background: rgba(26,159,255,.15); color: var(--accent); }
+.badge-yellow { background: rgba(210,153,34,.15); color: var(--yellow); }
+.badge-purple { background: rgba(139,92,246,.15); color: var(--purple); }
+.badge-orange { background: rgba(219,109,40,.15); color: var(--orange); }
+.badge-teal { background: rgba(46,166,166,.15); color: var(--teal); }
+.badge-gray { background: rgba(139,148,158,.1); color: var(--text3); }
+
+.card-review {
+  font-size: 11px; color: var(--text2);
+  display: flex; align-items: center; gap: 4px;
+}
+.review-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+
+.card-pricing { display: flex; flex-direction: column; gap: 2px; }
+.card-price-row { display: flex; align-items: center; gap: 8px; }
+.price-current {
+  font-family: var(--font-mono); font-weight: 500; font-size: 16px; color: var(--text);
+}
+.price-discount-badge {
+  font-size: 10px; font-weight: 600; font-family: var(--font-mono);
+  background: var(--green2); color: #fff; padding: 2px 5px; border-radius: 3px;
+}
+.price-original {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text3); text-decoration: line-through;
+}
+.price-lowest {
+  font-size: 10px; color: var(--text3);
+  font-family: var(--font-mono);
+}
+.price-lowest span { color: var(--yellow); }
+
+.free-badge { color: var(--green); font-family: var(--font-mono); font-weight: 600; font-size: 14px; }
+
+.card-footer { padding: 8px 12px; border-top: 1px solid var(--border); }
+
+.add-cart-btn {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); padding: 6px; border-radius: 5px;
+  cursor: pointer; font-size: 12px; font-family: var(--font-body);
+  transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 5px;
+}
+.add-cart-btn:hover { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.add-cart-btn.in-cart-btn { background: rgba(26,159,255,.1); border-color: var(--accent); color: var(--accent); }
+.add-cart-btn.in-cart-btn:hover { background: rgba(248,81,73,.1); border-color: var(--red); color: var(--red); }
+.add-cart-btn svg { width: 13px; height: 13px; fill: currentColor; }
+
+.card-loading {
+  width: 100%; height: 240px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3); font-size: 12px; flex-direction: column; gap: 8px;
+}
+
+/* ─── EMPTY STATE ─── */
+#empty-state {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px; padding: 40px;
+  text-align: center;
+}
+#empty-state svg { width: 64px; height: 64px; fill: var(--text3); opacity: .4; }
+#empty-state h2 { font-family: var(--font-head); font-size: 22px; color: var(--text2); }
+#empty-state p { color: var(--text3); font-size: 13px; max-width: 300px; line-height: 1.6; }
+
+/* ─── CART PANEL ─── */
+#cart-panel {
+  width: 0; flex-shrink: 0; overflow: hidden;
+  background: var(--bg2); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: width .25s ease;
+}
+#cart-panel.open { width: 280px; }
+
+#cart-header {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+#cart-header h3 { font-family: var(--font-head); font-size: 16px; font-weight: 600; }
+#cart-close { background: none; border: none; cursor: pointer; color: var(--text3); padding: 2px; }
+#cart-close:hover { color: var(--text); }
+#cart-close svg { width: 18px; height: 18px; fill: currentColor; }
+
+#cart-items { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.cart-item {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 10px; display: flex; gap: 10px; align-items: flex-start;
+}
+.cart-item-img { width: 48px; height: 30px; object-fit: cover; border-radius: 3px; flex-shrink: 0; background: var(--bg4); }
+.cart-item-info { flex: 1; min-width: 0; }
+.cart-item-name { font-size: 12px; font-weight: 500; color: var(--text); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cart-item-price { font-family: var(--font-mono); font-size: 12px; color: var(--accent); margin-top: 2px; }
+.cart-item-remove {
+  background: none; border: none; cursor: pointer; color: var(--text3);
+  padding: 2px; flex-shrink: 0;
+}
+.cart-item-remove:hover { color: var(--red); }
+.cart-item-remove svg { width: 14px; height: 14px; fill: currentColor; }
+
+#cart-footer { padding: 14px 16px; border-top: 1px solid var(--border); }
+.cart-total-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.cart-total-label { font-size: 12px; color: var(--text2); }
+.cart-total-val { font-family: var(--font-mono); font-size: 16px; font-weight: 500; color: var(--text); }
+.cart-balance-row { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 8px; }
+.cart-bal-label { font-size: 11px; color: var(--text3); }
+.cart-bal-val { font-family: var(--font-mono); font-size: 13px; }
+.cart-bal-val.ok { color: var(--green); }
+.cart-bal-val.danger { color: var(--red); }
+.cart-empty-msg { text-align: center; color: var(--text3); font-size: 12px; padding: 20px; }
+
+/* ─── MODAL ─── */
+#modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 24px; width: 420px; max-width: 90vw;
+  animation: modalIn .15s ease-out;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+
+.modal h2 { font-family: var(--font-head); font-size: 20px; margin-bottom: 16px; }
+.modal-input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 9px 12px; border-radius: 7px;
+  font-family: var(--font-body); font-size: 14px; margin-bottom: 8px;
+}
+.modal-input:focus { outline: none; border-color: var(--accent); }
+.modal-hint { font-size: 11px; color: var(--text3); margin-bottom: 16px; }
+.modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); padding: 8px 18px; border-radius: 6px;
+  cursor: pointer; font-size: 13px; transition: all .15s;
+}
+.modal-btn:hover { border-color: var(--border2); color: var(--text); }
+.modal-btn.confirm { background: var(--green2); border-color: var(--green); color: #fff; }
+.modal-btn.confirm:hover { background: #2ea043; }
+.modal-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.modal-error { font-size: 12px; color: var(--red); margin-bottom: 12px; display: none; }
+
+/* ─── PROGRESS OVERLAY ─── */
+#progress-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.8); backdrop-filter: blur(6px);
+  display: none; align-items: center; justify-content: center; flex-direction: column; gap: 20px;
+}
+#progress-overlay.open { display: flex; }
+
+.progress-box {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 32px 40px; text-align: center; min-width: 360px;
+}
+.progress-title { font-family: var(--font-head); font-size: 22px; margin-bottom: 8px; }
+.progress-subtitle { font-size: 12px; color: var(--text3); margin-bottom: 24px; line-height: 1.5; }
+.progress-bar-wrap { background: var(--bg3); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 12px; }
+.progress-bar { height: 100%; background: var(--accent); border-radius: 4px; width: 0%; transition: width .3s; }
+.progress-info { font-family: var(--font-mono); font-size: 12px; color: var(--text2); }
+.progress-game { font-size: 11px; color: var(--text3); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* spin */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; margin-bottom: 4px; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* balance input modal */
+#balance-modal { display: none; }
+#balance-modal.open { display: flex; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header id="header">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.029 4.524 4.524s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.252 0-2.265-1.014-2.265-2.265z"/></svg>
+    STEAM TRACKER
+  </div>
+
+  <div class="spacer"></div>
+
+  <button class="header-btn" id="refresh-btn" title="Обновить цены">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+    Проверить цены
+  </button>
+
+  <div id="balance-wrap" onclick="openBalanceModal()">
+    <span class="badge-label" style="font-size:11px;color:var(--text3);margin-right:4px">БАЛАНС</span>
+    <span id="balance-val">0 ₴</span>
+  </div>
+
+  <div id="cart-toggle" onclick="toggleCart()">
+    <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6" stroke="#fff" stroke-width="1.5" fill="none"/><path d="M16 10a4 4 0 0 1-8 0" stroke="#fff" stroke-width="1.5" fill="none"/></svg>
+    <div id="cart-badge">0</div>
+  </div>
+</header>
+
+<!-- LAYOUT -->
+<div id="layout">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div class="sidebar-section">
+      <button id="add-game-btn" onclick="openAddModal()">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        Добавить игру
+      </button>
+    </div>
+
+    <div class="filter-sep"></div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Фильтры</div>
+
+      <div class="filter-group">
+        <label class="filter-check">
+          <input type="checkbox" id="f-sale" onchange="applyFilters()">
+          Только со скидкой
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="f-achievements" onchange="applyFilters()">
+          Есть достижения
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="f-cards" onchange="applyFilters()">
+          Есть карточки
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="f-singleplayer" onchange="applyFilters()">
+          Одиночный режим
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="f-multiplayer" onchange="applyFilters()">
+          Мультиплеер
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="f-controller" onchange="applyFilters()">
+          Поддержка геймпада
+        </label>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Отзывы</label>
+        <select class="filter-select" id="f-review" onchange="applyFilters()">
+          <option value="">Любые</option>
+          <option value="overwhelmingly_positive">Исключительно положительные</option>
+          <option value="very_positive">Очень положительные</option>
+          <option value="positive">В основном положительные</option>
+          <option value="mixed">Смешанные</option>
+          <option value="negative">В основном отрицательные</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Цена (₴)</label>
+        <div class="price-range">
+          <div class="price-inputs">
+            <input type="number" class="price-input" id="f-price-min" placeholder="От" min="0" oninput="applyFilters()">
+            <input type="number" class="price-input" id="f-price-max" placeholder="До" min="0" oninput="applyFilters()">
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Жанр</label>
+        <select class="filter-select" id="f-genre" onchange="applyFilters()">
+          <option value="">Все жанры</option>
+          <option value="action">Action</option>
+          <option value="adventure">Adventure</option>
+          <option value="rpg">RPG</option>
+          <option value="strategy">Strategy</option>
+          <option value="simulation">Simulation</option>
+          <option value="sports">Sports</option>
+          <option value="racing">Racing</option>
+          <option value="puzzle">Puzzle</option>
+          <option value="horror">Horror</option>
+          <option value="indie">Indie</option>
+        </select>
+      </div>
+
+      <button class="reset-filters" onclick="resetFilters()">↺ Сбросить фильтры</button>
+    </div>
+
+    <div class="filter-sep"></div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Вид</div>
+      <div class="toggle-switch">
+        <span class="toggle-label">Минимальные цены</span>
+        <label class="toggle">
+          <input type="checkbox" id="t-lowest" onchange="renderGames()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main id="main">
+    <div id="toolbar">
+      <input type="text" id="search-input" placeholder="🔍 Поиск по названию..." oninput="applyFilters()">
+
+      <button class="sort-btn" id="sort-price-btn" onclick="setSort('price')">
+        Цена
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" id="sort-price-arrow"><path d="M5 1L9 7H1L5 1z"/></svg>
+      </button>
+      <button class="sort-btn" id="sort-review-btn" onclick="setSort('review')">
+        Отзывы
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" id="sort-review-arrow"><path d="M5 1L9 7H1L5 1z"/></svg>
+      </button>
+      <button class="sort-btn" id="sort-discount-btn" onclick="setSort('discount')">
+        Скидка
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" id="sort-discount-arrow"><path d="M5 1L9 7H1L5 1z"/></svg>
+      </button>
+      <button class="sort-btn" id="sort-name-btn" onclick="setSort('name')">
+        Название
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" id="sort-name-arrow"><path d="M5 1L9 7H1L5 1z"/></svg>
+      </button>
+
+      <span id="game-count"></span>
+    </div>
+
+    <div id="games-grid"></div>
+    <div id="empty-state" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+      <h2>Список пуст</h2>
+      <p>Нажмите «Добавить игру», чтобы начать отслеживать цены на любимые игры</p>
+    </div>
+  </main>
+
+  <!-- CART PANEL -->
+  <div id="cart-panel">
+    <div id="cart-header">
+      <h3>🛒 Корзина</h3>
+      <button id="cart-close" onclick="toggleCart()">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="cart-items">
+      <div class="cart-empty-msg">Корзина пуста</div>
+    </div>
+    <div id="cart-footer">
+      <div class="cart-total-row">
+        <span class="cart-total-label">Итого:</span>
+        <span class="cart-total-val" id="cart-total">0 ₴</span>
+      </div>
+      <div class="cart-balance-row">
+        <span class="cart-bal-label">Остаток баланса:</span>
+        <span class="cart-bal-val ok" id="cart-balance-left">0 ₴</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD GAME MODAL -->
+<div id="modal-overlay" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal">
+    <h2>➕ Добавить игру</h2>
+    <input type="text" class="modal-input" id="game-input"
+      placeholder="Название игры или Steam AppID..."
+      onkeydown="if(event.key==='Enter')addGame()">
+    <div class="modal-hint">Например: «Cyberpunk 2077» или «1091500»</div>
+    <div class="modal-error" id="add-error"></div>
+    <div class="modal-btns">
+      <button class="modal-btn" onclick="closeAddModal()">Отмена</button>
+      <button class="modal-btn confirm" id="add-confirm-btn" onclick="addGame()">
+        <span id="add-btn-text">Добавить</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- BALANCE MODAL -->
+<div id="balance-modal-overlay" onclick="if(event.target===this)closeBalanceModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
+  <div class="modal">
+    <h2>💰 Баланс Steam</h2>
+    <input type="number" class="modal-input" id="balance-input" placeholder="Введите баланс в гривнах..." min="0" step="0.01"
+      onkeydown="if(event.key==='Enter')saveBalance()">
+    <div class="modal-hint">Укажите текущий баланс вашего Steam-аккаунта (₴)</div>
+    <div class="modal-btns">
+      <button class="modal-btn" onclick="closeBalanceModal()">Отмена</button>
+      <button class="modal-btn confirm" onclick="saveBalance()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESS OVERLAY -->
+<div id="progress-overlay">
+  <div class="progress-box">
+    <div class="spinner"></div>
+    <div class="progress-title">Обновление цен</div>
+    <div class="progress-subtitle">Проверяем актуальные цены для каждой игры.<br>Это может занять некоторое время.</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="prog-bar"></div>
+    </div>
+    <div class="progress-info" id="prog-info">0 / 0</div>
+    <div class="progress-game" id="prog-game">—</div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════
+let games = [];
+let cart = [];
+let balance = 0;
+let sortBy = '';
+let sortDir = 1;
+let cartOpen = false;
+let filteredIds = null; // null = no active filter, show all
+
+const STORAGE_GAMES = 'stgames_v2';
+const STORAGE_CART = 'stcart_v2';
+const STORAGE_BALANCE = 'stbalance_v2';
+
+// ══════════════════════════════════════════
+// PERSIST
+// ══════════════════════════════════════════
+function save() {
+  try {
+    localStorage.setItem(STORAGE_GAMES, JSON.stringify(games));
+    localStorage.setItem(STORAGE_CART, JSON.stringify(cart));
+    localStorage.setItem(STORAGE_BALANCE, JSON.stringify(balance));
+  } catch(e) {}
+}
+function load() {
+  try {
+    const g = localStorage.getItem(STORAGE_GAMES);
+    const c = localStorage.getItem(STORAGE_CART);
+    const b = localStorage.getItem(STORAGE_BALANCE);
+    if (g) games = JSON.parse(g);
+    if (c) cart = JSON.parse(c);
+    if (b) balance = parseFloat(JSON.parse(b)) || 0;
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════
+// STEAM API — SteamSpy
+// Requires serving via HTTP (not file://)
+// Use запустить.py to start local server
+// ══════════════════════════════════════════
+
+// USD → UAH rate (SteamSpy prices are in USD cents)
+let USD_TO_UAH = 41.5;
+(async () => {
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const d = await r.json();
+    if (d && d.rates && d.rates.UAH) USD_TO_UAH = d.rates.UAH;
+  } catch(e) {}
+})();
+
+function usdCentsToUah(cents) {
+  if (cents == null || cents < 0) return null;
+  return Math.round((cents / 100) * USD_TO_UAH);
+}
+
+async function fetchSteamSpy(appid) {
+  try {
+    const r = await fetch(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d || !d.appid) return null;
+    return d;
+  } catch(e) { return null; }
+}
+
+async function searchSteamByName(name) {
+  try {
+    const r = await fetch(`https://steamspy.com/api.php?request=search&term=${encodeURIComponent(name)}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const keys = Object.keys(d);
+    if (!keys.length) return null;
+    const lname = name.toLowerCase();
+    const exactKey = keys.find(k => d[k].name && d[k].name.toLowerCase() === lname);
+    return exactKey || keys[0];
+  } catch(e) { return null; }
+}
+
+// Parse SteamSpy tags into feature categories
+function parseCatsFromTags(tags) {
+  if (!tags) return { singleplayer: false, multiplayer: false, achievements: false, cards: false, controller: false };
+  const t = Object.keys(tags).map(k => k.toLowerCase());
+  return {
+    singleplayer: t.some(x => x.includes('single')),
+    multiplayer:  t.some(x => x.includes('multi') || x === 'co-op' || x.includes('coop')),
+    achievements: t.some(x => x.includes('achievement')),
+    cards:        t.some(x => x.includes('trading card')),
+    controller:   t.some(x => x.includes('controller') || x.includes('gamepad')),
+  };
+}
+
+function parseGenresFromSpy(genre) {
+  if (!genre) return [];
+  return genre.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function calcReviewScore(pos, neg) {
+  const total = pos + neg;
+  if (total < 10) return null;
+  return Math.round((pos / total) * 100);
+}
+
+function reviewScoreClass(score) {
+  if (score >= 95) return { label: 'Исключительно положительные', key: 'overwhelmingly_positive', color: '#3fb950' };
+  if (score >= 85) return { label: 'Очень положительные',         key: 'very_positive',           color: '#3fb950' };
+  if (score >= 70) return { label: 'В основном положительные',    key: 'positive',                 color: '#8bc34a' };
+  if (score >= 40) return { label: 'Смешанные',                   key: 'mixed',                    color: '#d29922' };
+  return             { label: 'В основном отрицательные',         key: 'negative',                 color: '#f85149' };
+}
+
+function parsePriceFromSpy(spy) {
+  if (!spy) return { current: null, original: null, discount: 0, free: false };
+  // price == -1 means not available / region-locked
+  if (spy.price === -1) return { current: null, original: null, discount: 0, free: false };
+  if (spy.price === 0 && spy.initialprice === 0) return { current: 0, original: 0, discount: 0, free: true };
+  const current  = usdCentsToUah(spy.price);
+  const original = usdCentsToUah(spy.initialprice > 0 ? spy.initialprice : spy.price);
+  const discount = spy.discount ? parseInt(spy.discount) : 0;
+  return { current, original, discount, free: false };
+}
+
+async function buildGameObject(appid) {
+  const spy = await fetchSteamSpy(appid);
+  if (!spy || !spy.name) return null;
+
+  const price       = parsePriceFromSpy(spy);
+  const cats        = parseCatsFromTags(spy.tags);
+  const genres      = parseGenresFromSpy(spy.genre);
+  const reviewScore = calcReviewScore(spy.positive || 0, spy.negative || 0);
+  const image       = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
+
+  return {
+    appid:      String(appid),
+    name:       spy.name,
+    image,
+    price,
+    cats,
+    genres,
+    reviewScore,
+    reviewInfo: reviewScore ? reviewScoreClass(reviewScore) : null,
+    lowestPrice: price.current,
+    addedAt:    Date.now(),
+    lastUpdated: Date.now(),
+  };
+}
+
+// ══════════════════════════════════════════
+// ADD GAME MODAL
+// ══════════════════════════════════════════
+function openAddModal() {
+  document.getElementById('modal-overlay').classList.add('open');
+  document.getElementById('game-input').value = '';
+  document.getElementById('add-error').style.display = 'none';
+  document.getElementById('add-btn-text').textContent = 'Добавить';
+  document.getElementById('add-confirm-btn').disabled = false;
+  setTimeout(() => document.getElementById('game-input').focus(), 50);
+}
+function closeAddModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+async function addGame() {
+  const val = document.getElementById('game-input').value.trim();
+  if (!val) return;
+
+  const errEl = document.getElementById('add-error');
+  errEl.style.display = 'none';
+  const btn = document.getElementById('add-confirm-btn');
+  btn.disabled = true;
+  document.getElementById('add-btn-text').textContent = 'Поиск...';
+
+  let appid = null;
+  if (/^\d+$/.test(val)) {
+    appid = val;
+  } else {
+    appid = await searchSteamByName(val);
+  }
+
+  if (!appid) {
+    errEl.textContent = 'Игра не найдена. Попробуйте указать Steam AppID.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    document.getElementById('add-btn-text').textContent = 'Добавить';
+    return;
+  }
+
+  if (games.find(g => g.appid === String(appid))) {
+    errEl.textContent = 'Эта игра уже есть в вашем списке.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    document.getElementById('add-btn-text').textContent = 'Добавить';
+    return;
+  }
+
+  document.getElementById('add-btn-text').textContent = 'Загрузка...';
+  const game = await buildGameObject(appid);
+
+  if (!game) {
+    errEl.textContent = 'Не удалось получить данные об игре. Проверьте AppID.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    document.getElementById('add-btn-text').textContent = 'Добавить';
+    return;
+  }
+
+  games.push(game);
+  save();
+  closeAddModal();
+  applyFilters();
+}
+
+// ══════════════════════════════════════════
+// BALANCE MODAL
+// ══════════════════════════════════════════
+function openBalanceModal() {
+  const el = document.getElementById('balance-modal-overlay');
+  el.style.display = 'flex';
+  document.getElementById('balance-input').value = balance > 0 ? balance : '';
+  setTimeout(() => document.getElementById('balance-input').focus(), 50);
+}
+function closeBalanceModal() {
+  document.getElementById('balance-modal-overlay').style.display = 'none';
+}
+function saveBalance() {
+  const v = parseFloat(document.getElementById('balance-input').value) || 0;
+  balance = v;
+  save();
+  updateBalanceUI();
+  closeBalanceModal();
+}
+
+function updateBalanceUI() {
+  const wrap = document.getElementById('balance-wrap');
+  document.getElementById('balance-val').textContent = formatPrice(balance);
+
+  const total = cartTotal();
+  const danger = cart.length > 0 && total > balance;
+  wrap.classList.toggle('danger', danger);
+
+  const left = balance - total;
+  const leftEl = document.getElementById('cart-balance-left');
+  leftEl.textContent = formatPrice(left);
+  leftEl.className = 'cart-bal-val ' + (left < 0 ? 'danger' : 'ok');
+  document.getElementById('cart-total').textContent = formatPrice(total);
+}
+
+// ══════════════════════════════════════════
+// CART
+// ══════════════════════════════════════════
+function toggleCart() {
+  cartOpen = !cartOpen;
+  document.getElementById('cart-panel').classList.toggle('open', cartOpen);
+}
+
+function cartTotal() {
+  return cart.reduce((s, id) => {
+    const g = games.find(g => g.appid === id);
+    if (!g) return s;
+    const showLowest = document.getElementById('t-lowest').checked;
+    const p = showLowest ? (g.lowestPrice || g.price.current) : g.price.current;
+    return s + (p || 0);
+  }, 0);
+}
+
+function addToCart(appid) {
+  if (!cart.includes(appid)) cart.push(appid);
+  save();
+  renderCart();
+  renderGames();
+  updateBalanceUI();
+}
+function removeFromCart(appid) {
+  cart = cart.filter(id => id !== appid);
+  save();
+  renderCart();
+  renderGames();
+  updateBalanceUI();
+}
+function toggleCart2(appid) {
+  if (cart.includes(appid)) removeFromCart(appid);
+  else addToCart(appid);
+}
+
+function renderCart() {
+  const el = document.getElementById('cart-items');
+  const badge = document.getElementById('cart-badge');
+
+  badge.textContent = cart.length;
+  badge.style.display = cart.length > 0 ? 'flex' : 'none';
+
+  if (cart.length === 0) {
+    el.innerHTML = '<div class="cart-empty-msg">Корзина пуста</div>';
+    return;
+  }
+
+  el.innerHTML = '';
+  const showLowest = document.getElementById('t-lowest').checked;
+
+  cart.forEach(id => {
+    const g = games.find(g => g.appid === id);
+    if (!g) return;
+    const p = showLowest ? (g.lowestPrice || g.price.current) : g.price.current;
+    const item = document.createElement('div');
+    item.className = 'cart-item';
+    item.innerHTML = `
+      <img class="cart-item-img" src="${g.image||''}" onerror="this.style.display='none'" alt="">
+      <div class="cart-item-info">
+        <div class="cart-item-name">${esc(g.name)}</div>
+        <div class="cart-item-price">${g.price.free ? 'Бесплатно' : formatPrice(p)}</div>
+      </div>
+      <button class="cart-item-remove" onclick="removeFromCart('${g.appid}')" title="Удалить">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    `;
+    el.appendChild(item);
+  });
+}
+
+// ══════════════════════════════════════════
+// RENDER GAMES
+// ══════════════════════════════════════════
+function formatPrice(n) {
+  if (n == null) return '—';
+  return (n < 0 ? '-' : '') + Math.abs(Math.round(n)) + ' ₴';
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function reviewColor(key) {
+  const map = {
+    overwhelmingly_positive: '#3fb950',
+    very_positive: '#3fb950',
+    positive: '#8bc34a',
+    mixed: '#d29922',
+    negative: '#f85149',
+  };
+  return map[key] || '#8b949e';
+}
+
+function genreBadge(genre) {
+  const map = {
+    action: 'badge-orange', adventure: 'badge-blue', rpg: 'badge-purple',
+    strategy: 'badge-teal', simulation: 'badge-green', sports: 'badge-yellow',
+    racing: 'badge-yellow', puzzle: 'badge-blue', horror: 'badge-gray', indie: 'badge-purple',
+  };
+  return map[genre] || 'badge-gray';
+}
+
+function renderGames() {
+  const grid = document.getElementById('games-grid');
+  const empty = document.getElementById('empty-state');
+  const showLowest = document.getElementById('t-lowest').checked;
+
+  if (games.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'flex';
+    document.getElementById('game-count').textContent = '';
+    renderCart();
+    return;
+  }
+  empty.style.display = 'none';
+
+  let toShow = filteredIds !== null ? filteredIds.map(id => games.find(g => g.appid === id)).filter(Boolean) : [...games];
+
+  // sort
+  if (sortBy === 'price') {
+    toShow.sort((a,b) => {
+      const pa = a.price.free ? 0 : (a.price.current ?? 9999);
+      const pb = b.price.free ? 0 : (b.price.current ?? 9999);
+      return (pa - pb) * sortDir;
+    });
+  } else if (sortBy === 'review') {
+    toShow.sort((a,b) => ((b.reviewScore||0) - (a.reviewScore||0)) * sortDir);
+  } else if (sortBy === 'discount') {
+    toShow.sort((a,b) => ((b.price.discount||0) - (a.price.discount||0)) * sortDir);
+  } else if (sortBy === 'name') {
+    toShow.sort((a,b) => a.name.localeCompare(b.name) * sortDir);
+  }
+
+  document.getElementById('game-count').textContent = `${toShow.length} / ${games.length} игр`;
+
+  grid.innerHTML = '';
+  toShow.forEach(g => {
+    const inCart = cart.includes(g.appid);
+    const showPrice = showLowest ? (g.lowestPrice || g.price.current) : g.price.current;
+    const card = document.createElement('div');
+    card.className = 'game-card' + (inCart ? ' in-cart' : '');
+    card.dataset.appid = g.appid;
+
+    // price HTML
+    let priceHtml = '';
+    if (g.price.free) {
+      priceHtml = `<span class="free-badge">Бесплатно</span>`;
+    } else if (g.price.current == null) {
+      priceHtml = `<span class="price-current">—</span>`;
+    } else {
+      const disc = g.price.discount > 0;
+      priceHtml = `
+        <div class="card-price-row">
+          ${disc ? `<span class="price-discount-badge">-${g.price.discount}%</span>` : ''}
+          <span class="price-current">${formatPrice(showLowest ? (g.lowestPrice||g.price.current) : g.price.current)}</span>
+          ${disc && !showLowest ? `<span class="price-original">${formatPrice(g.price.original)}</span>` : ''}
+        </div>
+        ${showLowest && g.lowestPrice !== g.price.current ? `<div class="price-lowest">Текущая: <span>${formatPrice(g.price.current)}</span></div>` : ''}
+        ${!showLowest && g.lowestPrice != null && g.lowestPrice < g.price.current ? `<div class="price-lowest">Мин. цена: <span>${formatPrice(g.lowestPrice)}</span></div>` : ''}
+      `;
+    }
+
+    // badges
+    let badges = '';
+    if (g.cats.achievements) badges += `<span class="badge badge-yellow">🏆 Достиж.</span>`;
+    if (g.cats.cards) badges += `<span class="badge badge-blue">🃏 Карточки</span>`;
+    if (g.cats.singleplayer) badges += `<span class="badge badge-green">👤 Одиночная</span>`;
+    if (g.cats.multiplayer) badges += `<span class="badge badge-purple">👥 Мульти</span>`;
+    if (g.cats.controller) badges += `<span class="badge badge-teal">🎮 Геймпад</span>`;
+
+    const topGenre = g.genres && g.genres[0];
+    if (topGenre) badges += `<span class="badge ${genreBadge(topGenre)}">${topGenre}</span>`;
+
+    // review
+    let reviewHtml = '';
+    if (g.reviewScore) {
+      const ri = g.reviewInfo || reviewScoreClass(g.reviewScore);
+      reviewHtml = `<div class="card-review">
+        <span class="review-dot" style="background:${ri.color}"></span>
+        <span style="font-size:10px;color:${ri.color}">${ri.label}</span>
+        <span style="font-size:10px;color:var(--text3)">(${g.reviewScore})</span>
+      </div>`;
+    }
+
+    card.innerHTML = `
+      ${g.image ? `<img class="card-img" src="${esc(g.image)}" alt="${esc(g.name)}" loading="lazy">` 
+                : `<div class="card-img-placeholder">Нет изображения</div>`}
+      <div class="card-body">
+        <div class="card-title">${esc(g.name)}</div>
+        <div class="card-meta">${badges}</div>
+        ${reviewHtml}
+        <div class="card-pricing" style="margin-top:auto;padding-top:4px">${priceHtml}</div>
+      </div>
+      <div class="card-footer">
+        <button class="add-cart-btn ${inCart ? 'in-cart-btn' : ''}" onclick="toggleCart2('${g.appid}')">
+          <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6" stroke-width="1.5" fill="none"/><path d="M16 10a4 4 0 0 1-8 0" stroke-width="1.5" fill="none"/></svg>
+          ${inCart ? 'Убрать из корзины' : 'В корзину'}
+        </button>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  renderCart();
+  updateBalanceUI();
+}
+
+// ══════════════════════════════════════════
+// FILTERS
+// ══════════════════════════════════════════
+function applyFilters() {
+  const fSale    = document.getElementById('f-sale').checked;
+  const fAch     = document.getElementById('f-achievements').checked;
+  const fCards   = document.getElementById('f-cards').checked;
+  const fSingle  = document.getElementById('f-singleplayer').checked;
+  const fMulti   = document.getElementById('f-multiplayer').checked;
+  const fCtrl    = document.getElementById('f-controller').checked;
+  const fReview  = document.getElementById('f-review').value;
+  const fPriceMin = parseFloat(document.getElementById('f-price-min').value) || 0;
+  const fPriceMax = parseFloat(document.getElementById('f-price-max').value) || Infinity;
+  const fGenre   = document.getElementById('f-genre').value.toLowerCase();
+  const fSearch  = document.getElementById('search-input').value.toLowerCase().trim();
+
+  const anyActive = fSale || fAch || fCards || fSingle || fMulti || fCtrl ||
+                    fReview || fPriceMin > 0 || fPriceMax < Infinity || fGenre || fSearch;
+
+  if (!anyActive) {
+    filteredIds = null;
+    renderGames();
+    return;
+  }
+
+  filteredIds = games.filter(g => {
+    if (fSearch && !g.name.toLowerCase().includes(fSearch)) return false;
+    if (fSale && (!g.price.discount || g.price.discount <= 0)) return false;
+    if (fAch && !g.cats.achievements) return false;
+    if (fCards && !g.cats.cards) return false;
+    if (fSingle && !g.cats.singleplayer) return false;
+    if (fMulti && !g.cats.multiplayer) return false;
+    if (fCtrl && !g.cats.controller) return false;
+    if (fReview && (!g.reviewInfo || g.reviewInfo.key !== fReview)) return false;
+    const p = g.price.free ? 0 : (g.price.current || 0);
+    if (p < fPriceMin || p > fPriceMax) return false;
+    if (fGenre && (!g.genres || !g.genres.some(gn => gn.includes(fGenre)))) return false;
+    return true;
+  }).map(g => g.appid);
+
+  renderGames();
+}
+
+function resetFilters() {
+  document.getElementById('f-sale').checked = false;
+  document.getElementById('f-achievements').checked = false;
+  document.getElementById('f-cards').checked = false;
+  document.getElementById('f-singleplayer').checked = false;
+  document.getElementById('f-multiplayer').checked = false;
+  document.getElementById('f-controller').checked = false;
+  document.getElementById('f-review').value = '';
+  document.getElementById('f-price-min').value = '';
+  document.getElementById('f-price-max').value = '';
+  document.getElementById('f-genre').value = '';
+  document.getElementById('search-input').value = '';
+  filteredIds = null;
+  renderGames();
+}
+
+// ══════════════════════════════════════════
+// SORT
+// ══════════════════════════════════════════
+function setSort(key) {
+  if (sortBy === key) sortDir *= -1;
+  else { sortBy = key; sortDir = 1; }
+  ['price','review','discount','name'].forEach(k => {
+    document.getElementById(`sort-${k}-btn`).classList.toggle('active', k === key);
+  });
+  renderGames();
+}
+
+// ══════════════════════════════════════════
+// REFRESH PRICES
+// ══════════════════════════════════════════
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  if (games.length === 0) return;
+  const overlay = document.getElementById('progress-overlay');
+  const bar = document.getElementById('prog-bar');
+  const info = document.getElementById('prog-info');
+  const gameEl = document.getElementById('prog-game');
+  overlay.classList.add('open');
+
+  const total = games.length;
+  let done = 0;
+
+  for (let i = 0; i < games.length; i++) {
+    const g = games[i];
+    gameEl.textContent = g.name;
+    info.textContent = `${done} / ${total}`;
+    bar.style.width = (done / total * 100) + '%';
+
+    try {
+      const spy = await fetchSteamSpy(g.appid);
+      if (spy) {
+        const price = parsePriceFromSpy(spy);
+        games[i].price = price;
+        // update lowest price
+        if (price.current != null && (games[i].lowestPrice == null || price.current < games[i].lowestPrice)) {
+          games[i].lowestPrice = price.current;
+        }
+        games[i].lastUpdated = Date.now();
+      }
+    } catch(e) {}
+
+    done++;
+    bar.style.width = (done / total * 100) + '%';
+    info.textContent = `${done} / ${total}`;
+
+    // delay between requests to avoid rate limiting
+    if (i < games.length - 1) {
+      await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
+    }
+  }
+
+  save();
+  overlay.classList.remove('open');
+  applyFilters();
+});
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+load();
+filteredIds = null;
+renderGames();
+updateBalanceUI();
+</script>
+</body>
+</html>
