@@ -699,15 +699,29 @@ body {
 
 <!-- ITAD KEY MODAL -->
 <div id="itad-modal-overlay" onclick="if(event.target===this)closeItadModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:460px">
     <h2>🔑 ITAD API ключ</h2>
-    <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6">Для отображения исторических минимальных цен за год нужен бесплатный API ключ от <strong style="color:var(--accent)">IsThereAnyDeal</strong>.<br><br>Регистрация занимает ~30 секунд:<br>1. Перейди на <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">isthereanydeal.com/apps/my/</a><br>2. Создай приложение<br>3. Скопируй API Key сюда</p>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6">
+      Для отображения <strong>исторических минимальных цен</strong> нужен бесплатный ключ от <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">IsThereAnyDeal</a>.<br><br>
+      <strong style="color:var(--text)">Как получить (30 сек):</strong><br>
+      1. Открой <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">isthereanydeal.com/apps/my/</a><br>
+      2. Войди / зарегистрируйся → «Create app» → любое название<br>
+      3. Скопируй <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">API Key</code> сюда
+    </p>
     <input type="text" class="modal-input" id="itad-key-input" placeholder="Вставьте API ключ..." style="font-family:var(--font-mono);font-size:13px">
     <div class="modal-error" id="itad-error"></div>
     <div class="modal-btns">
       <button class="modal-btn" onclick="closeItadModal()">Отмена</button>
       <button class="modal-btn" style="background:rgba(248,81,73,.15);border-color:var(--red2);color:var(--red)" onclick="clearItadKey()">Удалить ключ</button>
       <button class="modal-btn confirm" onclick="saveItadKey()">Сохранить</button>
+    </div>
+    <div id="itad-diag-section" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">🧪 Диагностика — протестируй ключ на конкретной игре:</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input type="text" id="itad-diag-appid" class="modal-input" placeholder="AppID игры (например 627270)" style="font-size:12px;padding:6px 10px;margin:0;flex:1">
+        <button class="modal-btn confirm" style="padding:6px 12px;font-size:12px;flex-shrink:0" onclick="itadRunDiag()">Тест</button>
+      </div>
+      <pre id="itad-diag-output" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:11px;font-family:var(--font-mono);color:var(--text2);white-space:pre-wrap;margin:0;max-height:140px;overflow-y:auto;display:none"></pre>
     </div>
   </div>
 </div>
@@ -975,71 +989,107 @@ async function buildGameObject(appid) {
 // ══════════════════════════════════════════
 
 // ── ITAD helpers ─────────────────────────────────────────────────────────
+// ITAD supports CORS — we call it directly from the browser.
+// GET requests use fetchWithProxy as fallback only if direct fails.
+// POST requests (history/low) are sent directly — no proxy needed.
 
-// POST through corsproxy.io — the only free proxy that supports POST+JSON
-async function itadPost(path, body, params = '') {
-  const base = `https://api.isthereanydeal.com${path}?key=${itadKey}${params ? '&' + params : ''}`;
-  // Try corsproxy.io first (supports POST)
+async function itadGet(path, params = '') {
+  const url = `https://api.isthereanydeal.com${path}?key=${itadKey}&${params}`;
+  // Try direct fetch first (ITAD supports CORS)
   try {
-    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(base)}`, {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (r.ok) return await r.json();
+  } catch(e) {}
+  // Fallback via proxy
+  try { return await fetchWithProxy(url); } catch(e) {}
+  return null;
+}
+
+async function itadPostDirect(path, body, params = '') {
+  const url = `https://api.isthereanydeal.com${path}?key=${itadKey}&${params}`;
+  // Try direct POST (ITAD supports CORS for POST too)
+  try {
+    const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) return await r.json();
+  } catch(e) {}
+  // Fallback: corsproxy.io
+  try {
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(body),
     });
     if (r.ok) {
       const text = await r.text();
-      return JSON.parse(text);
+      // corsproxy sometimes wraps in allorigins format
+      try {
+        const w = JSON.parse(text);
+        if (w && w.contents) return JSON.parse(w.contents);
+        return w;
+      } catch(e) {}
     }
-  } catch(e) {}
-  // Fallback: allorigins GET (encode body as workaround — won't work for strict POST, but try)
-  try {
-    const d = await fetchWithProxy(base + '&ids=' + encodeURIComponent(JSON.stringify(body)));
-    if (d) return d;
   } catch(e) {}
   return null;
 }
 
-// Step 1: lookup ITAD UUID by Steam AppID (GET — works via fetchWithProxy)
+// Step 1: lookup ITAD UUID by Steam AppID
 async function itadLookupId(appid) {
   if (!itadKey) return null;
   try {
-    const url = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
-    const d = await fetchWithProxy(url);
+    const d = await itadGet('/games/lookup/v1', `appid=${appid}`);
     if (!d || !d.found || !d.game) return null;
-    return d.game.id; // UUID string
+    return d.game.id;
   } catch(e) { return null; }
 }
 
-// Step 2: get history low via /games/history/low/v1 (POST with array of UUIDs)
-// Returns per-game: { game: uuid, low: { amount, amountInt, currency } }
+// Step 2: get all-time historical low price via /games/history/low/v1
 async function itadHistoryLow(itadId, country = 'UA') {
   if (!itadKey || !itadId) return null;
   try {
-    const data = await itadPost('/games/history/low/v1', [itadId], `country=${country}`);
+    const data = await itadPostDirect('/games/history/low/v1', [itadId], `country=${country}`);
     if (!Array.isArray(data) || !data[0]) return null;
-    const row = data[0];
-    // row.low contains { amount, currency }
-    return row.low ?? null;
+    return data[0].low ?? null; // { amount, currency }
   } catch(e) { return null; }
 }
 
-// Convert amount to UAH if ITAD returned a different currency
+// Convert ITAD amount to UAH
 function toUah(amount, currency) {
   if (amount == null) return null;
   if (!currency || currency === 'UAH') return Math.round(amount);
-  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10, CZK: 1.8 };
+  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10, CZK: 1.8, TRY: 1.2 };
   return Math.round(amount * (rates[currency] || 41));
 }
 
-// Main: lookup + fetch low for one game, returns UAH amount or null
+// Main entry: lookup game + get historical low → UAH
 async function fetchAndUpdateHistoryLow(game) {
   if (!itadKey) return null;
   const itadId = await itadLookupId(game.appid);
   if (!itadId) return null;
   const low = await itadHistoryLow(itadId);
   if (!low) return null;
-  const uah = toUah(low.amount, low.currency);
-  return uah;
+  return toUah(low.amount, low.currency);
+}
+
+// ── ITAD diagnostics (called from ITAD modal) ──────────────────────────────
+async function runItadDiagnostic(appid) {
+  const log = [];
+  log.push(`🔍 AppID: ${appid}, Key: ${itadKey ? itadKey.slice(0,8)+'…' : 'НЕТ'}`);
+  if (!itadKey) { return log.join('\n') + '\n❌ Ключ не задан'; }
+
+  log.push('⏳ Lookup UUID...');
+  const itadId = await itadLookupId(appid);
+  if (!itadId) { return log.join('\n') + '\n❌ UUID не найден — игра неизвестна ITAD или ключ неверный'; }
+  log.push(`✅ UUID: ${itadId}`);
+
+  log.push('⏳ History low...');
+  const low = await itadHistoryLow(itadId);
+  if (!low) { return log.join('\n') + '\n❌ История цен не получена — нет данных для этой страны/игры'; }
+  log.push(`✅ Low: ${low.amount} ${low.currency} → ${toUah(low.amount, low.currency)} ₴`);
+  return log.join('\n');
 }
 
 // ══════════════════════════════════════════
@@ -1118,8 +1168,19 @@ function openItadModal() {
   const inp = document.getElementById('itad-key-input');
   inp.value = itadKey || '';
   document.getElementById('itad-error').style.display = 'none';
+  document.getElementById('itad-diag-section').style.display = itadKey ? 'block' : 'none';
+  document.getElementById('itad-diag-output').style.display = 'none';
   updateItadKeyBtn();
   setTimeout(() => inp.focus(), 50);
+}
+
+async function itadRunDiag() {
+  const appid = document.getElementById('itad-diag-appid').value.trim() || '627270';
+  const out = document.getElementById('itad-diag-output');
+  out.style.display = 'block';
+  out.textContent = '⏳ Выполняется диагностика...';
+  const result = await runItadDiagnostic(appid);
+  out.textContent = result;
 }
 function closeItadModal() {
   document.getElementById('itad-modal-overlay').style.display = 'none';
@@ -1147,7 +1208,11 @@ async function saveItadKey() {
       itadKey = val;
       localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
       updateItadKeyBtn();
-      closeItadModal();
+      errEl.textContent = '✅ Ключ сохранён и проверен!';
+      errEl.style.color = 'var(--green)';
+      errEl.style.display = 'block';
+      document.getElementById('itad-diag-section').style.display = 'block';
+      setTimeout(closeItadModal, 1200);
     } else {
       errEl.textContent = 'Ключ не валиден. Проверьте и попробуйте снова.';
       errEl.style.color = 'var(--red)';
