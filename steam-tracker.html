@@ -604,6 +604,7 @@ body {
       </div>
 
       <button class="reset-filters" onclick="resetFilters()">↺ Сбросить фильтры</button>
+      <button class="reset-filters" id="itad-key-btn" onclick="openItadModal()" style="margin-top:4px;border-color:var(--accent);color:var(--accent)" title="Настроить ITAD API ключ для исторических цен">🔑 ITAD API ключ</button>
     </div>
 
     <div class="filter-sep"></div>
@@ -695,6 +696,22 @@ body {
   </div>
 </div>
 
+
+<!-- ITAD KEY MODAL -->
+<div id="itad-modal-overlay" onclick="if(event.target===this)closeItadModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:420px">
+    <h2>🔑 ITAD API ключ</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6">Для отображения исторических минимальных цен за год нужен бесплатный API ключ от <strong style="color:var(--accent)">IsThereAnyDeal</strong>.<br><br>Регистрация занимает ~30 секунд:<br>1. Перейди на <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">isthereanydeal.com/apps/my/</a><br>2. Создай приложение<br>3. Скопируй API Key сюда</p>
+    <input type="text" class="modal-input" id="itad-key-input" placeholder="Вставьте API ключ..." style="font-family:var(--font-mono);font-size:13px">
+    <div class="modal-error" id="itad-error"></div>
+    <div class="modal-btns">
+      <button class="modal-btn" onclick="closeItadModal()">Отмена</button>
+      <button class="modal-btn" style="background:rgba(248,81,73,.15);border-color:var(--red2);color:var(--red)" onclick="clearItadKey()">Удалить ключ</button>
+      <button class="modal-btn confirm" onclick="saveItadKey()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- BALANCE MODAL -->
 <div id="balance-modal-overlay" onclick="if(event.target===this)closeBalanceModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
   <div class="modal">
@@ -734,8 +751,10 @@ let sortBy = '';
 let sortDir = 1;
 let cartOpen = false;
 let filteredIds = null; // null = no active filter, show all
+let itadKey = '';
 
 const STORAGE_GAMES = 'stgames_v2';
+const STORAGE_ITAD_KEY = 'stgames_itad_key';
 const STORAGE_CART = 'stcart_v2';
 const STORAGE_BALANCE = 'stbalance_v2';
 
@@ -747,6 +766,7 @@ function save() {
     localStorage.setItem(STORAGE_GAMES, JSON.stringify(games));
     localStorage.setItem(STORAGE_CART, JSON.stringify(cart));
     localStorage.setItem(STORAGE_BALANCE, JSON.stringify(balance));
+    if (itadKey) localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
   } catch(e) {}
 }
 function load() {
@@ -757,6 +777,7 @@ function load() {
     if (g) games = JSON.parse(g);
     if (c) cart = JSON.parse(c);
     if (b) balance = parseFloat(JSON.parse(b)) || 0;
+    const k = localStorage.getItem(STORAGE_ITAD_KEY); if (k) itadKey = k;
   } catch(e) {}
 }
 
@@ -918,6 +939,22 @@ async function buildGameObject(appid) {
 
   const image = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
 
+  // Fetch ITAD history low on add if key is available
+  let lowestPrice = price.current;
+  let itadLow = null;
+  if (itadKey) {
+    try {
+      const tempGame = { appid: String(appid) };
+      const hist = await fetchAndUpdateHistoryLow(tempGame);
+      if (hist) {
+        itadLow = hist.y1 ?? hist.all;
+        if (itadLow != null && (lowestPrice == null || itadLow < lowestPrice)) {
+          lowestPrice = itadLow;
+        }
+      }
+    } catch(e) {}
+  }
+
   return {
     appid:      String(appid),
     name,
@@ -928,11 +965,77 @@ async function buildGameObject(appid) {
     editions,
     reviewScore,
     reviewInfo: reviewScore ? reviewScoreClass(reviewScore) : null,
-    lowestPrice: price.current,
+    lowestPrice,
+    itadLow,
     addedAt:    Date.now(),
     lastUpdated: Date.now(),
   };
 }
+
+// ══════════════════════════════════════════
+// ITAD — Historical Low (requires free API key)
+// Register at: https://isthereanydeal.com/apps/my/
+// ══════════════════════════════════════════
+
+// Step 1: lookup ITAD UUID by Steam AppID
+async function itadLookupId(appid) {
+  if (!itadKey) return null;
+  try {
+    const url = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
+    const d = await fetchWithProxy(url);
+    if (!d || !d.found || !d.game) return null;
+    return d.game.id; // UUID
+  } catch(e) { return null; }
+}
+
+// Step 2: get historical low (all time, y1, m3) from ITAD overview
+async function itadHistoryLow(itadId, country='UA') {
+  if (!itadKey || !itadId) return null;
+  try {
+    const url = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=${country}`;
+    const body = JSON.stringify([itadId]);
+    const proxies = [
+      () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, {
+        method: 'GET' // allorigins only supports GET — use different approach
+      }),
+    ];
+    // For POST we need corsproxy.io which supports POST
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (!data || !Array.isArray(data) || !data[0]) return null;
+    const game = data[0];
+    // historyLow.y1 = 1-year low, historyLow.all = all-time low
+    const y1 = game.historyLow?.y1;
+    const all = game.historyLow?.all;
+    return { y1: y1?.amount ?? null, all: all?.amount ?? null, currency: y1?.currency || all?.currency || 'UAH' };
+  } catch(e) { return null; }
+}
+
+// Convert foreign currency to UAH if needed (rough estimate)
+async function toUah(amount, currency) {
+  if (!amount) return null;
+  if (currency === 'UAH' || currency === 'UAH') return Math.round(amount);
+  // Use a rough static rate as fallback
+  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10 };
+  return Math.round(amount * (rates[currency] || 41));
+}
+
+async function fetchAndUpdateHistoryLow(game) {
+  const itadId = await itadLookupId(game.appid);
+  if (!itadId) return null;
+  const low = await itadHistoryLow(itadId);
+  if (!low) return null;
+  // y1 is 1-year low — prefer this for "за год" feature
+  const uahY1 = await toUah(low.y1, low.currency);
+  const uahAll = await toUah(low.all, low.currency);
+  return { y1: uahY1, all: uahAll };
+}
+
 // ══════════════════════════════════════════
 // ADD GAME MODAL
 // ══════════════════════════════════════════
@@ -998,6 +1101,72 @@ async function addGame() {
   save();
   closeAddModal();
   applyFilters();
+}
+
+
+// ══════════════════════════════════════════
+// ITAD KEY MODAL
+// ══════════════════════════════════════════
+function openItadModal() {
+  document.getElementById('itad-modal-overlay').style.display = 'flex';
+  const inp = document.getElementById('itad-key-input');
+  inp.value = itadKey || '';
+  document.getElementById('itad-error').style.display = 'none';
+  updateItadKeyBtn();
+  setTimeout(() => inp.focus(), 50);
+}
+function closeItadModal() {
+  document.getElementById('itad-modal-overlay').style.display = 'none';
+}
+function clearItadKey() {
+  itadKey = '';
+  localStorage.removeItem(STORAGE_ITAD_KEY);
+  document.getElementById('itad-key-input').value = '';
+  updateItadKeyBtn();
+  closeItadModal();
+}
+async function saveItadKey() {
+  const val = document.getElementById('itad-key-input').value.trim();
+  const errEl = document.getElementById('itad-error');
+  errEl.style.display = 'none';
+  if (!val) { clearItadKey(); closeItadModal(); return; }
+  // Quick validation: try a lookup
+  errEl.textContent = 'Проверка ключа...';
+  errEl.style.display = 'block';
+  errEl.style.color = 'var(--text2)';
+  try {
+    const testUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${val}&appid=730`;
+    const d = await fetchWithProxy(testUrl);
+    if (d && (d.found !== undefined)) {
+      itadKey = val;
+      localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
+      updateItadKeyBtn();
+      closeItadModal();
+    } else {
+      errEl.textContent = 'Ключ не валиден. Проверьте и попробуйте снова.';
+      errEl.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    errEl.textContent = 'Ошибка проверки. Ключ сохранён как есть.';
+    errEl.style.color = 'var(--yellow)';
+    itadKey = val;
+    localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
+    updateItadKeyBtn();
+    setTimeout(closeItadModal, 1500);
+  }
+}
+function updateItadKeyBtn() {
+  const btn = document.getElementById('itad-key-btn');
+  if (!btn) return;
+  if (itadKey) {
+    btn.textContent = '✅ ITAD ключ активен';
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+  } else {
+    btn.innerHTML = '🔑 ITAD API ключ';
+    btn.style.borderColor = 'var(--accent)';
+    btn.style.color = 'var(--accent)';
+  }
 }
 
 // ══════════════════════════════════════════
@@ -1192,7 +1361,7 @@ function renderGames() {
         const isDifferent = minPrice !== g.price.current;
         priceHtml = `
           <div class="card-price-row">
-            <span class="price-discount-badge" style="background:var(--teal)">МИН</span>
+            <span class="price-discount-badge" style="background:var(--teal)" title="${g.itadLow != null ? 'Данные ITAD (мин. за год)' : 'Мин. цена с момента добавления'}">МИН</span>
             <span class="price-current">${formatPrice(minPrice)}</span>
           </div>
           ${isDifferent ? `<div class="price-lowest">Сейчас: <span>${formatPrice(g.price.current)}${disc ? ` (-${g.price.discount}%)` : ''}</span></div>` : ''}
@@ -1375,8 +1544,26 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
           games[i].editions = parseEditionsFromStore(storeData.package_groups);
         }
         games[i].lastUpdated = Date.now();
+        // Update lowestPrice from current price
+        if (price.current != null && (games[i].lowestPrice == null || price.current < games[i].lowestPrice)) {
+          games[i].lowestPrice = price.current;
+        }
       }
     } catch(e) {}
+    // Fetch ITAD historical low if key is set
+    if (itadKey) {
+      try {
+        const hist = await fetchAndUpdateHistoryLow(games[i]);
+        if (hist) {
+          // y1 = 1-year Steam low in UAH, all = all-time low
+          const itadLow = hist.y1 ?? hist.all;
+          if (itadLow != null && (games[i].lowestPrice == null || itadLow < games[i].lowestPrice)) {
+            games[i].lowestPrice = itadLow;
+            games[i].itadLow = itadLow;
+          }
+        }
+      } catch(e) {}
+    }
 
     done++;
     bar.style.width = (done / total * 100) + '%';
