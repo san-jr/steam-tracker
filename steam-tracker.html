@@ -424,6 +424,40 @@ body {
 .cart-bal-val.danger { color: var(--red); }
 .cart-empty-msg { text-align: center; color: var(--text3); font-size: 12px; padding: 20px; }
 
+/* ─── IMPORT/EXPORT ─── */
+#io-btn {
+  position: fixed; bottom: 20px; left: 20px; z-index: 100;
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text2); padding: 8px 14px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-family: var(--font-body);
+  display: flex; align-items: center; gap: 6px;
+  transition: all .15s; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+#io-btn:hover { border-color: var(--accent); color: var(--accent); }
+#io-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+/* ─── DRAG & DROP ─── */
+.game-card { position: relative; }
+.game-card.drag-over { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.game-card.dragging { opacity: .4; }
+.drag-handle {
+  position: absolute; top: 6px; right: 6px; z-index: 10;
+  cursor: grab; color: var(--text3); opacity: 0; transition: opacity .15s;
+  background: rgba(13,17,23,.7); border-radius: 4px; padding: 2px 4px;
+}
+.game-card:hover .drag-handle { opacity: 1; }
+.drag-handle:active { cursor: grabbing; }
+.drag-handle svg { width: 12px; height: 12px; fill: currentColor; display: block; }
+
+.cart-item { cursor: default; }
+.cart-item.drag-over { outline: 2px dashed var(--accent); outline-offset: 1px; }
+.cart-item.dragging { opacity: .4; }
+.cart-drag-handle {
+  cursor: grab; color: var(--text3); padding: 0 2px; flex-shrink: 0; align-self: center;
+}
+.cart-drag-handle:active { cursor: grabbing; }
+.cart-drag-handle svg { width: 12px; height: 12px; fill: currentColor; display: block; }
+
 /* ─── MODAL ─── */
 #modal-overlay {
   position: fixed; inset: 0; z-index: 200;
@@ -678,11 +712,12 @@ body {
 </div>
 
 <!-- ADD GAME MODAL -->
-<div id="modal-overlay" onclick="if(event.target===this)closeAddModal()">
+<div id="modal-overlay">
   <div class="modal">
-    <h2>➕ Добавить игру</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><h2 style="margin:0">➕ Добавить игру</h2><button onclick="closeAddModal()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;line-height:1;padding:2px 4px" title="Закрыть">✕</button></div>
     <input type="text" class="modal-input" id="game-input"
       placeholder="https://store.steampowered.com/app/330020/..."
+      autocomplete="off" autocorrect="off" spellcheck="false"
       onkeydown="if(event.key==='Enter')addGame()">
     <div class="modal-hint">Вставьте ссылку на игру из Steam Store</div>
     <div style="margin-top:10px">
@@ -703,6 +738,33 @@ body {
 </div>
 
 
+
+<!-- IMPORT/EXPORT MODAL -->
+<div id="io-modal-overlay" onclick="if(event.target===this)closeIoModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
+  <div class="modal" style="max-width:380px">
+    <h2>📦 Импорт / Экспорт</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">Экспортируй список игр в JSON-файл и импортируй его на другом устройстве или браузере.</p>
+    <div class="modal-btns" style="flex-direction:column;gap:8px">
+      <button class="modal-btn confirm" style="justify-content:center" onclick="exportGames()">
+        ⬇️ Экспортировать список игр
+      </button>
+      <button class="modal-btn" style="justify-content:center;border-color:var(--accent);color:var(--accent)" onclick="document.getElementById('import-file-input').click()">
+        ⬆️ Импортировать из файла
+      </button>
+      <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importGames(event)">
+    </div>
+    <div class="modal-error" id="io-error" style="margin-top:10px"></div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="modal-btn" onclick="closeIoModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- IO BUTTON -->
+<button id="io-btn" onclick="openIoModal()">
+  <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  Импорт / Экспорт
+</button>
 
 <!-- BALANCE MODAL -->
 <div id="balance-modal-overlay" onclick="if(event.target===this)closeBalanceModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
@@ -1260,7 +1322,11 @@ function renderGames() {
       </div>`;
     }
 
+    card.setAttribute('draggable', 'true');
     card.innerHTML = `
+      <div class="drag-handle" title="Перетащить">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="19" r="1.2"/><circle cx="15" cy="19" r="1.2"/></svg>
+      </div>
       <a href="https://store.steampowered.com/app/${g.appid}/" target="_blank" rel="noopener" style="display:block;text-decoration:none">${g.image ? `<img class="card-img" src="${esc(g.image)}" alt="${esc(g.name)}" loading="lazy" style="cursor:pointer">` : `<div class="card-img-placeholder">Нет изображения</div>`}</a>
       <div class="card-body">
         <div class="card-title">${esc(g.name)}</div>
@@ -1281,6 +1347,28 @@ function renderGames() {
         </div>
       </div>
     `;
+    // Drag listeners for card reordering
+    card.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', g.appid);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const fromId = e.dataTransfer.getData('text/plain');
+      const toId = g.appid;
+      if (fromId === toId) return;
+      const fromIdx = games.findIndex(x => x.appid === fromId);
+      const toIdx   = games.findIndex(x => x.appid === toId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = games.splice(fromIdx, 1);
+      games.splice(toIdx, 0, moved);
+      save();
+      renderGames();
+    });
     grid.appendChild(card);
   });
 
@@ -1420,99 +1508,58 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 });
 
 
+
+
 // ══════════════════════════════════════════
-// PASSWORD PROTECTION
+// IMPORT / EXPORT
 // ══════════════════════════════════════════
-const AUTH_HASH_KEY = 'stgames_pw_hash';
-const AUTH_SESSION_KEY = 'stgames_auth_v1';
-let authFailCount = 0;
-let authLockedUntil = 0;
-
-async function hashPassword(pw) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw + 'stgames_salt'));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+function openIoModal() {
+  document.getElementById('io-modal-overlay').style.display = 'flex';
+  document.getElementById('io-error').style.display = 'none';
+}
+function closeIoModal() {
+  document.getElementById('io-modal-overlay').style.display = 'none';
 }
 
-async function checkAuth() {
-  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
-  if (!storedHash) { showPasswordSetup(); return; }
-  if (sessionStorage.getItem(AUTH_SESSION_KEY) === 'ok') {
-    document.getElementById('auth-overlay').style.display = 'none';
-    return;
-  }
-  document.getElementById('auth-overlay').style.display = 'flex';
-  document.getElementById('auth-setup').style.display = 'none';
-  document.getElementById('auth-login').style.display = 'block';
-  setTimeout(() => document.getElementById('auth-pw-input').focus(), 100);
+function exportGames() {
+  const data = { version: 2, exportedAt: new Date().toISOString(), games, cart, balance };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `steam-tracker-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function showPasswordSetup() {
-  document.getElementById('auth-overlay').style.display = 'flex';
-  document.getElementById('auth-login').style.display = 'none';
-  document.getElementById('auth-setup').style.display = 'block';
-  setTimeout(() => document.getElementById('auth-setup-pw').focus(), 100);
-}
-
-async function submitLogin() {
-  const now = Date.now();
-  const errEl = document.getElementById('auth-error');
-
-  // Lockout check
-  if (now < authLockedUntil) {
-    const secs = Math.ceil((authLockedUntil - now) / 1000);
-    errEl.textContent = `Слишком много попыток. Подождите ${secs} сек.`;
-    errEl.style.display = 'block';
-    return;
-  }
-
-  const btn = document.querySelector('#auth-login .modal-btn.confirm');
-  btn.disabled = true;
-  btn.textContent = '...';
-
-  // Constant-time delay to prevent timing attacks
-  const [hash] = await Promise.all([
-    hashPassword(document.getElementById('auth-pw-input').value),
-    new Promise(r => setTimeout(r, 600 + Math.random() * 400))
-  ]);
-
-  btn.disabled = false;
-  btn.textContent = 'Войти';
-
-  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
-  if (hash === storedHash) {
-    authFailCount = 0;
-    sessionStorage.setItem(AUTH_SESSION_KEY, 'ok');
-    document.getElementById('auth-overlay').style.display = 'none';
-    document.getElementById('auth-pw-input').value = '';
-    errEl.style.display = 'none';
-  } else {
-    authFailCount++;
-    document.getElementById('auth-pw-input').value = '';
-    document.getElementById('auth-pw-input').focus();
-    // Progressive lockout: 5s, 15s, 60s, 5min after every 5 fails
-    if (authFailCount >= 5) {
-      const delays = [5000, 15000, 60000, 300000];
-      const delay = delays[Math.min(Math.floor(authFailCount / 5) - 1, delays.length - 1)];
-      authLockedUntil = Date.now() + delay;
-      errEl.textContent = `Неверный пароль. Заблокировано на ${delay/1000} сек.`;
-    } else {
-      errEl.textContent = `Неверный пароль (попытка ${authFailCount}/5)`;
+function importGames(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const errEl = document.getElementById('io-error');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.games || !Array.isArray(data.games)) throw new Error('Неверный формат файла');
+      games = data.games;
+      cart = Array.isArray(data.cart) ? data.cart : [];
+      balance = typeof data.balance === 'number' ? data.balance : 0;
+      save();
+      renderGames();
+      updateBalanceUI();
+      errEl.textContent = `✅ Импортировано ${games.length} игр`;
+      errEl.style.color = 'var(--green)';
+      errEl.style.display = 'block';
+      setTimeout(closeIoModal, 1500);
+    } catch(err) {
+      errEl.textContent = '❌ Ошибка: ' + err.message;
+      errEl.style.color = 'var(--red)';
+      errEl.style.display = 'block';
     }
-    errEl.style.display = 'block';
-  }
-}
-
-async function submitSetup() {
-  const pw = document.getElementById('auth-setup-pw').value.trim();
-  const pw2 = document.getElementById('auth-setup-pw2').value.trim();
-  const errEl = document.getElementById('auth-setup-error');
-  if (!pw) { errEl.textContent = 'Введите пароль'; errEl.style.display = 'block'; return; }
-  if (pw.length < 4) { errEl.textContent = 'Минимум 4 символа'; errEl.style.display = 'block'; return; }
-  if (pw !== pw2) { errEl.textContent = 'Пароли не совпадают'; errEl.style.display = 'block'; return; }
-  const hash = await hashPassword(pw);
-  localStorage.setItem(AUTH_HASH_KEY, hash);
-  sessionStorage.setItem(AUTH_SESSION_KEY, 'ok');
-  document.getElementById('auth-overlay').style.display = 'none';
+    // Reset file input so same file can be re-imported
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ══════════════════════════════════════════
@@ -1522,32 +1569,7 @@ load();
 filteredIds = null;
 renderGames();
 updateBalanceUI();
-checkAuth();
 </script>
-
-<!-- AUTH OVERLAY -->
-<div id="auth-overlay" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:0">
-  <!-- Login form -->
-  <div id="auth-login" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:320px;display:none">
-    <h2 style="font-family:var(--font-head);font-size:20px;margin-bottom:6px;text-align:center">🔒 Steam Tracker</h2>
-    <p style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:20px">Введите пароль для доступа</p>
-    <input type="password" id="auth-pw-input" class="modal-input" placeholder="Пароль..."
-      style="margin-bottom:10px" onkeydown="if(event.key==='Enter')submitLogin()">
-    <div class="modal-error" id="auth-error" style="margin-bottom:10px"></div>
-    <button class="modal-btn confirm" style="width:100%" onclick="submitLogin()">Войти</button>
-  </div>
-  <!-- First-time setup -->
-  <div id="auth-setup" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:340px;display:none">
-    <h2 style="font-family:var(--font-head);font-size:20px;margin-bottom:6px;text-align:center">🛡️ Защита страницы</h2>
-    <p style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:20px;line-height:1.6">Первый запуск — установите пароль.<br>Он хранится только в вашем браузере.</p>
-    <input type="password" id="auth-setup-pw" class="modal-input" placeholder="Придумайте пароль..."
-      style="margin-bottom:8px" onkeydown="if(event.key==='Enter')document.getElementById('auth-setup-pw2').focus()">
-    <input type="password" id="auth-setup-pw2" class="modal-input" placeholder="Повторите пароль..."
-      style="margin-bottom:10px" onkeydown="if(event.key==='Enter')submitSetup()">
-    <div class="modal-error" id="auth-setup-error" style="margin-bottom:10px"></div>
-    <button class="modal-btn confirm" style="width:100%" onclick="submitSetup()">Установить пароль</button>
-  </div>
-</div>
 
 </body>
 </html>
