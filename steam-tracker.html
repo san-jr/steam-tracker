@@ -1100,10 +1100,24 @@ async function runItadDiagnostic(appid) {
 
   log.push('⏳ History low (overview/v2)...');
   try {
-    const urlUA = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA&id[]=${itadId}`;
-    const rawUA = await itadProxyGet(urlUA);
-    log.push(`📦 UA response: ${JSON.stringify(rawUA).slice(0, 500)}`);
-  } catch(e) { log.push(`❌ overview/v2 UA error: ${e.message}`); }
+    // Note: id%5B%5D is encoded form of id[] — some proxies break on raw brackets
+    const overviewUrl = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA&id%5B%5D=${itadId}`;
+    const overviewUrlUS = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=US&id%5B%5D=${itadId}`;
+    // Try corsproxy.io directly for GET (it worked for lookup)
+    let rawUA = null, rawUS = null;
+    try {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(overviewUrl)}`);
+      log.push(`corsproxy.io UA status: ${r.status}`);
+      if (r.ok) rawUA = await r.json();
+    } catch(e) { log.push(`corsproxy.io UA error: ${e.message}`); }
+    try {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(overviewUrlUS)}`);
+      log.push(`corsproxy.io US status: ${r.status}`);
+      if (r.ok) rawUS = await r.json();
+    } catch(e) { log.push(`corsproxy.io US error: ${e.message}`); }
+    log.push(`📦 UA: ${JSON.stringify(rawUA).slice(0, 400)}`);
+    log.push(`📦 US: ${JSON.stringify(rawUS).slice(0, 400)}`);
+  } catch(e) { log.push(`❌ overview error: ${e.message}`); }
   return log.join('\n');
 }
 
