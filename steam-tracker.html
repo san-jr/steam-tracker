@@ -944,13 +944,10 @@ async function buildGameObject(appid) {
   let itadLow = null;
   if (itadKey) {
     try {
-      const tempGame = { appid: String(appid) };
-      const hist = await fetchAndUpdateHistoryLow(tempGame);
-      if (hist) {
-        itadLow = hist.y1 ?? hist.all;
-        if (itadLow != null && (lowestPrice == null || itadLow < lowestPrice)) {
-          lowestPrice = itadLow;
-        }
+      const uah = await fetchAndUpdateHistoryLow({ appid: String(appid) });
+      if (uah != null) {
+        itadLow = uah;
+        if (lowestPrice == null || uah < lowestPrice) lowestPrice = uah;
       }
     } catch(e) {}
   }
@@ -977,63 +974,72 @@ async function buildGameObject(appid) {
 // Register at: https://isthereanydeal.com/apps/my/
 // ══════════════════════════════════════════
 
-// Step 1: lookup ITAD UUID by Steam AppID
+// ── ITAD helpers ─────────────────────────────────────────────────────────
+
+// POST through corsproxy.io — the only free proxy that supports POST+JSON
+async function itadPost(path, body, params = '') {
+  const base = `https://api.isthereanydeal.com${path}?key=${itadKey}${params ? '&' + params : ''}`;
+  // Try corsproxy.io first (supports POST)
+  try {
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(base)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      const text = await r.text();
+      return JSON.parse(text);
+    }
+  } catch(e) {}
+  // Fallback: allorigins GET (encode body as workaround — won't work for strict POST, but try)
+  try {
+    const d = await fetchWithProxy(base + '&ids=' + encodeURIComponent(JSON.stringify(body)));
+    if (d) return d;
+  } catch(e) {}
+  return null;
+}
+
+// Step 1: lookup ITAD UUID by Steam AppID (GET — works via fetchWithProxy)
 async function itadLookupId(appid) {
   if (!itadKey) return null;
   try {
     const url = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
     const d = await fetchWithProxy(url);
     if (!d || !d.found || !d.game) return null;
-    return d.game.id; // UUID
+    return d.game.id; // UUID string
   } catch(e) { return null; }
 }
 
-// Step 2: get historical low (all time, y1, m3) from ITAD overview
-async function itadHistoryLow(itadId, country='UA') {
+// Step 2: get history low via /games/history/low/v1 (POST with array of UUIDs)
+// Returns per-game: { game: uuid, low: { amount, amountInt, currency } }
+async function itadHistoryLow(itadId, country = 'UA') {
   if (!itadKey || !itadId) return null;
   try {
-    const url = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=${country}`;
-    const body = JSON.stringify([itadId]);
-    const proxies = [
-      () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, {
-        method: 'GET' // allorigins only supports GET — use different approach
-      }),
-    ];
-    // For POST we need corsproxy.io which supports POST
-    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    if (!data || !Array.isArray(data) || !data[0]) return null;
-    const game = data[0];
-    // historyLow.y1 = 1-year low, historyLow.all = all-time low
-    const y1 = game.historyLow?.y1;
-    const all = game.historyLow?.all;
-    return { y1: y1?.amount ?? null, all: all?.amount ?? null, currency: y1?.currency || all?.currency || 'UAH' };
+    const data = await itadPost('/games/history/low/v1', [itadId], `country=${country}`);
+    if (!Array.isArray(data) || !data[0]) return null;
+    const row = data[0];
+    // row.low contains { amount, currency }
+    return row.low ?? null;
   } catch(e) { return null; }
 }
 
-// Convert foreign currency to UAH if needed (rough estimate)
-async function toUah(amount, currency) {
-  if (!amount) return null;
-  if (currency === 'UAH' || currency === 'UAH') return Math.round(amount);
-  // Use a rough static rate as fallback
-  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10 };
+// Convert amount to UAH if ITAD returned a different currency
+function toUah(amount, currency) {
+  if (amount == null) return null;
+  if (!currency || currency === 'UAH') return Math.round(amount);
+  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10, CZK: 1.8 };
   return Math.round(amount * (rates[currency] || 41));
 }
 
+// Main: lookup + fetch low for one game, returns UAH amount or null
 async function fetchAndUpdateHistoryLow(game) {
+  if (!itadKey) return null;
   const itadId = await itadLookupId(game.appid);
   if (!itadId) return null;
   const low = await itadHistoryLow(itadId);
   if (!low) return null;
-  // y1 is 1-year low — prefer this for "за год" feature
-  const uahY1 = await toUah(low.y1, low.currency);
-  const uahAll = await toUah(low.all, low.currency);
-  return { y1: uahY1, all: uahAll };
+  const uah = toUah(low.amount, low.currency);
+  return uah;
 }
 
 // ══════════════════════════════════════════
@@ -1548,22 +1554,16 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
           games[i].editions = parseEditionsFromStore(storeData.package_groups);
         }
         games[i].lastUpdated = Date.now();
-        // Update lowestPrice from current price
-        if (price.current != null && (games[i].lowestPrice == null || price.current < games[i].lowestPrice)) {
-          games[i].lowestPrice = price.current;
-        }
       }
     } catch(e) {}
     // Fetch ITAD historical low if key is set
     if (itadKey) {
       try {
-        const hist = await fetchAndUpdateHistoryLow(games[i]);
-        if (hist) {
-          // y1 = 1-year Steam low in UAH, all = all-time low
-          const itadLow = hist.y1 ?? hist.all;
-          if (itadLow != null && (games[i].lowestPrice == null || itadLow < games[i].lowestPrice)) {
-            games[i].lowestPrice = itadLow;
-            games[i].itadLow = itadLow;
+        const uah = await fetchAndUpdateHistoryLow(games[i]);
+        if (uah != null) {
+          games[i].itadLow = uah;
+          if (games[i].lowestPrice == null || uah < games[i].lowestPrice) {
+            games[i].lowestPrice = uah;
           }
         }
       } catch(e) {}
@@ -1590,6 +1590,7 @@ load();
 filteredIds = null;
 renderGames();
 updateBalanceUI();
+updateItadKeyBtn();
 </script>
 </body>
 </html>
