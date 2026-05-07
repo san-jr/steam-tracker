@@ -989,19 +989,39 @@ async function buildGameObject(appid) {
 // ══════════════════════════════════════════
 
 // ── ITAD helpers ─────────────────────────────────────────────────────────
-// Strategy: ALL requests go through allorigins.win proxy (GET only).
-// /games/lookup/v1  — GET, returns UUID for a Steam appid
-// /games/overview/v2 — GET with id[]=uuid params, returns historyLow {all, y1, m3}
-// This avoids all POST/CORS issues entirely.
+// Strategy: try multiple CORS proxies for GET requests to ITAD.
+// All ITAD endpoints used here are GET — no POST needed.
 
 async function itadProxyGet(url) {
-  // allorigins wraps response in { contents: "..." }
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const r = await fetch(proxyUrl);
-  if (!r.ok) throw new Error(`allorigins ${r.status}`);
-  const wrapper = await r.json();
-  if (!wrapper || !wrapper.contents) throw new Error('no contents');
-  return JSON.parse(wrapper.contents);
+  const proxies = [
+    // corsproxy.io — supports GET, returns raw response
+    async (u) => {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`);
+      if (!r.ok) throw new Error(`corsproxy ${r.status}`);
+      return await r.json();
+    },
+    // allorigins — wraps in { contents: "..." }
+    async (u) => {
+      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`);
+      if (!r.ok) throw new Error(`allorigins ${r.status}`);
+      const w = await r.json();
+      if (!w?.contents) throw new Error('no contents');
+      const text = w.contents;
+      // contents might be a string starting with "Oops" if blocked
+      if (text.startsWith('Oops') || text.startsWith('<')) throw new Error('blocked');
+      return JSON.parse(text);
+    },
+    // corsproxy.dev
+    async (u) => {
+      const r = await fetch(`https://corsproxy.dev/?${encodeURIComponent(u)}`);
+      if (!r.ok) throw new Error(`corsproxy.dev ${r.status}`);
+      return await r.json();
+    },
+  ];
+  for (const proxy of proxies) {
+    try { return await proxy(url); } catch(e) { continue; }
+  }
+  throw new Error('All proxies failed');
 }
 
 // Step 1: lookup ITAD UUID by Steam AppID
@@ -1057,33 +1077,33 @@ async function runItadDiagnostic(appid) {
   log.push(`🔍 AppID: ${appid}, Key: ${itadKey ? itadKey.slice(0,8)+'…' : 'НЕТ'}`);
   if (!itadKey) return log.join('\n') + '\n❌ Ключ не задан';
 
-  log.push('⏳ Lookup UUID...');
-  try {
-    const lookupUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(lookupUrl)}`;
-    const r = await fetch(proxyUrl);
-    const wrapper = await r.json();
-    log.push(`📦 allorigins status: ${r.status}, has contents: ${!!wrapper?.contents}`);
-    if (wrapper?.contents) {
-      log.push(`📦 contents preview: ${wrapper.contents.slice(0, 300)}`);
-      const parsed = JSON.parse(wrapper.contents);
-      log.push(`📦 parsed.found: ${parsed?.found}, parsed.game: ${JSON.stringify(parsed?.game)}`);
-    }
-  } catch(e) { log.push(`❌ Lookup raw error: ${e}`); }
-  const itadId = await itadLookupId(appid);
-  if (!itadId) return log.join('\n') + '\n❌ UUID не найден';
+  // Test each proxy in order and show which one works
+  log.push('⏳ Тестирование прокси...');
+  const lookupUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
+  const proxyTests = [
+    { name: 'corsproxy.io', fn: async (u) => { const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); return await r.json(); } },
+    { name: 'allorigins.win', fn: async (u) => { const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); const w = await r.json(); if (!w?.contents || w.contents.startsWith('Oops')) throw new Error('blocked'); return JSON.parse(w.contents); } },
+    { name: 'corsproxy.dev', fn: async (u) => { const r = await fetch(`https://corsproxy.dev/?${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); return await r.json(); } },
+  ];
+  let workingProxy = null;
+  for (const pt of proxyTests) {
+    try {
+      const d = await pt.fn(lookupUrl);
+      log.push(`✅ ${pt.name}: OK → found=${d?.found}, game=${JSON.stringify(d?.game)}`);
+      if (d?.found && d?.game) workingProxy = { name: pt.name, data: d };
+      break;
+    } catch(e) { log.push(`❌ ${pt.name}: ${e.message}`); }
+  }
+  if (!workingProxy) return log.join('\n') + '\n❌ Все прокси заблокированы или ключ неверен';
+  const itadId = workingProxy.data.game.id;
   log.push(`✅ UUID: ${itadId}`);
 
-  log.push('⏳ History low (overview/v2, UA)...');
-  // Debug: fetch raw response to see exact structure
+  log.push('⏳ History low (overview/v2)...');
   try {
     const urlUA = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA&id[]=${itadId}`;
     const rawUA = await itadProxyGet(urlUA);
-    log.push(`📦 Raw UA: ${JSON.stringify(rawUA).slice(0, 400)}`);
-    const urlUS = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=US&id[]=${itadId}`;
-    const rawUS = await itadProxyGet(urlUS);
-    log.push(`📦 Raw US: ${JSON.stringify(rawUS).slice(0, 400)}`);
-  } catch(e) { log.push(`❌ Raw fetch error: ${e.message}`); }
+    log.push(`📦 UA response: ${JSON.stringify(rawUA).slice(0, 500)}`);
+  } catch(e) { log.push(`❌ overview/v2 UA error: ${e.message}`); }
   return log.join('\n');
 }
 
