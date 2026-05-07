@@ -994,34 +994,34 @@ async function buildGameObject(appid) {
 
 async function itadProxyGet(url) {
   const proxies = [
-    // corsproxy.io — supports GET, returns raw response
     async (u) => {
       const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`);
       if (!r.ok) throw new Error(`corsproxy ${r.status}`);
       return await r.json();
     },
-    // allorigins — wraps in { contents: "..." }
     async (u) => {
       const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`);
       if (!r.ok) throw new Error(`allorigins ${r.status}`);
       const w = await r.json();
-      if (!w?.contents) throw new Error('no contents');
-      const text = w.contents;
-      // contents might be a string starting with "Oops" if blocked
-      if (text.startsWith('Oops') || text.startsWith('<')) throw new Error('blocked');
-      return JSON.parse(text);
-    },
-    // corsproxy.dev
-    async (u) => {
-      const r = await fetch(`https://corsproxy.dev/?${encodeURIComponent(u)}`);
-      if (!r.ok) throw new Error(`corsproxy.dev ${r.status}`);
-      return await r.json();
+      if (!w?.contents || w.contents.startsWith('Oops') || w.contents.startsWith('<')) throw new Error('blocked');
+      return JSON.parse(w.contents);
     },
   ];
   for (const proxy of proxies) {
     try { return await proxy(url); } catch(e) { continue; }
   }
   throw new Error('All proxies failed');
+}
+
+// POST via corsproxy.io — works for ITAD endpoints that require POST
+async function itadProxyPost(url, body) {
+  const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`corsproxy POST ${r.status}`);
+  return await r.json();
 }
 
 // Step 1: lookup ITAD UUID by Steam AppID
@@ -1035,18 +1035,15 @@ async function itadLookupId(appid) {
   } catch(e) { return null; }
 }
 
-// Step 2: get historyLow via /games/overview/v2 (GET, id[] query params)
-// Returns historyLow: { all: {amount, currency}, y1: {...}, m3: {...} }
+// Step 2: get historyLow via /games/overview/v2 (POST, body = array of UUIDs)
+// Returns array of game objects with historyLow: { all, y1, m3 } each { amount, currency }
 async function itadHistoryLow(itadId, country = 'UA') {
   if (!itadKey || !itadId) return null;
   try {
-    const url = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=${country}&id[]=${itadId}`;
-    const data = await itadProxyGet(url);
-    // overview/v2 returns array of game objects
+    const url = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=${country}`;
+    const data = await itadProxyPost(url, [itadId]);
     if (!Array.isArray(data) || !data[0]) return null;
-    const game = data[0];
-    // historyLow lives at game level: { all, y1, m3 } each with { amount, currency }
-    const hl = game.historyLow;
+    const hl = data[0].historyLow;
     if (!hl) return null;
     // Prefer y1 (1-year low), fall back to all-time
     return hl.y1 ?? hl.all ?? null;
@@ -1098,26 +1095,28 @@ async function runItadDiagnostic(appid) {
   const itadId = workingProxy.data.game.id;
   log.push(`✅ UUID: ${itadId}`);
 
-  log.push('⏳ History low (overview/v2)...');
+  log.push('⏳ History low (overview/v2 POST)...');
   try {
-    // Note: id%5B%5D is encoded form of id[] — some proxies break on raw brackets
-    const overviewUrl = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA&id%5B%5D=${itadId}`;
-    const overviewUrlUS = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=US&id%5B%5D=${itadId}`;
-    // Try corsproxy.io directly for GET (it worked for lookup)
-    let rawUA = null, rawUS = null;
-    try {
-      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(overviewUrl)}`);
-      log.push(`corsproxy.io UA status: ${r.status}`);
-      if (r.ok) rawUA = await r.json();
-    } catch(e) { log.push(`corsproxy.io UA error: ${e.message}`); }
-    try {
-      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(overviewUrlUS)}`);
-      log.push(`corsproxy.io US status: ${r.status}`);
-      if (r.ok) rawUS = await r.json();
-    } catch(e) { log.push(`corsproxy.io US error: ${e.message}`); }
-    log.push(`📦 UA: ${JSON.stringify(rawUA).slice(0, 400)}`);
-    log.push(`📦 US: ${JSON.stringify(rawUS).slice(0, 400)}`);
-  } catch(e) { log.push(`❌ overview error: ${e.message}`); }
+    const urlUA = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA`;
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(urlUA)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([itadId]),
+    });
+    log.push(`POST UA status: ${r.status}`);
+    if (r.ok) {
+      const data = await r.json();
+      log.push(`📦 UA: ${JSON.stringify(data).slice(0, 600)}`);
+      const hl = data?.[0]?.historyLow;
+      if (hl) {
+        const low = hl.y1 ?? hl.all;
+        log.push(`✅ historyLow.y1=${JSON.stringify(hl.y1)} all=${JSON.stringify(hl.all)}`);
+        log.push(`✅ Result: ${low?.amount} ${low?.currency} → ${toUah(low?.amount, low?.currency)} ₴`);
+      } else {
+        log.push('⚠️ historyLow is null/missing in response');
+      }
+    }
+  } catch(e) { log.push(`❌ POST error: ${e.message}`); }
   return log.join('\n');
 }
 
