@@ -1058,8 +1058,20 @@ async function runItadDiagnostic(appid) {
   if (!itadKey) return log.join('\n') + '\n❌ Ключ не задан';
 
   log.push('⏳ Lookup UUID...');
+  try {
+    const lookupUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(lookupUrl)}`;
+    const r = await fetch(proxyUrl);
+    const wrapper = await r.json();
+    log.push(`📦 allorigins status: ${r.status}, has contents: ${!!wrapper?.contents}`);
+    if (wrapper?.contents) {
+      log.push(`📦 contents preview: ${wrapper.contents.slice(0, 300)}`);
+      const parsed = JSON.parse(wrapper.contents);
+      log.push(`📦 parsed.found: ${parsed?.found}, parsed.game: ${JSON.stringify(parsed?.game)}`);
+    }
+  } catch(e) { log.push(`❌ Lookup raw error: ${e}`); }
   const itadId = await itadLookupId(appid);
-  if (!itadId) return log.join('\n') + '\n❌ UUID не найден — игра неизвестна ITAD или ключ неверный';
+  if (!itadId) return log.join('\n') + '\n❌ UUID не найден';
   log.push(`✅ UUID: ${itadId}`);
 
   log.push('⏳ History low (overview/v2, UA)...');
