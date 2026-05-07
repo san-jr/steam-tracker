@@ -1419,6 +1419,102 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   applyFilters();
 });
 
+
+// ══════════════════════════════════════════
+// PASSWORD PROTECTION
+// ══════════════════════════════════════════
+const AUTH_HASH_KEY = 'stgames_pw_hash';
+const AUTH_SESSION_KEY = 'stgames_auth_v1';
+let authFailCount = 0;
+let authLockedUntil = 0;
+
+async function hashPassword(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw + 'stgames_salt'));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkAuth() {
+  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
+  if (!storedHash) { showPasswordSetup(); return; }
+  if (sessionStorage.getItem(AUTH_SESSION_KEY) === 'ok') {
+    document.getElementById('auth-overlay').style.display = 'none';
+    return;
+  }
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('auth-setup').style.display = 'none';
+  document.getElementById('auth-login').style.display = 'block';
+  setTimeout(() => document.getElementById('auth-pw-input').focus(), 100);
+}
+
+function showPasswordSetup() {
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('auth-login').style.display = 'none';
+  document.getElementById('auth-setup').style.display = 'block';
+  setTimeout(() => document.getElementById('auth-setup-pw').focus(), 100);
+}
+
+async function submitLogin() {
+  const now = Date.now();
+  const errEl = document.getElementById('auth-error');
+
+  // Lockout check
+  if (now < authLockedUntil) {
+    const secs = Math.ceil((authLockedUntil - now) / 1000);
+    errEl.textContent = `Слишком много попыток. Подождите ${secs} сек.`;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.querySelector('#auth-login .modal-btn.confirm');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  // Constant-time delay to prevent timing attacks
+  const [hash] = await Promise.all([
+    hashPassword(document.getElementById('auth-pw-input').value),
+    new Promise(r => setTimeout(r, 600 + Math.random() * 400))
+  ]);
+
+  btn.disabled = false;
+  btn.textContent = 'Войти';
+
+  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
+  if (hash === storedHash) {
+    authFailCount = 0;
+    sessionStorage.setItem(AUTH_SESSION_KEY, 'ok');
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('auth-pw-input').value = '';
+    errEl.style.display = 'none';
+  } else {
+    authFailCount++;
+    document.getElementById('auth-pw-input').value = '';
+    document.getElementById('auth-pw-input').focus();
+    // Progressive lockout: 5s, 15s, 60s, 5min after every 5 fails
+    if (authFailCount >= 5) {
+      const delays = [5000, 15000, 60000, 300000];
+      const delay = delays[Math.min(Math.floor(authFailCount / 5) - 1, delays.length - 1)];
+      authLockedUntil = Date.now() + delay;
+      errEl.textContent = `Неверный пароль. Заблокировано на ${delay/1000} сек.`;
+    } else {
+      errEl.textContent = `Неверный пароль (попытка ${authFailCount}/5)`;
+    }
+    errEl.style.display = 'block';
+  }
+}
+
+async function submitSetup() {
+  const pw = document.getElementById('auth-setup-pw').value.trim();
+  const pw2 = document.getElementById('auth-setup-pw2').value.trim();
+  const errEl = document.getElementById('auth-setup-error');
+  if (!pw) { errEl.textContent = 'Введите пароль'; errEl.style.display = 'block'; return; }
+  if (pw.length < 4) { errEl.textContent = 'Минимум 4 символа'; errEl.style.display = 'block'; return; }
+  if (pw !== pw2) { errEl.textContent = 'Пароли не совпадают'; errEl.style.display = 'block'; return; }
+  const hash = await hashPassword(pw);
+  localStorage.setItem(AUTH_HASH_KEY, hash);
+  sessionStorage.setItem(AUTH_SESSION_KEY, 'ok');
+  document.getElementById('auth-overlay').style.display = 'none';
+}
+
 // ══════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════
@@ -1426,6 +1522,7 @@ load();
 filteredIds = null;
 renderGames();
 updateBalanceUI();
+checkAuth();
 </script>
 
 <!-- AUTH OVERLAY -->
@@ -1452,75 +1549,5 @@ updateBalanceUI();
   </div>
 </div>
 
-<script type="module">
-
-// ══════════════════════════════════════════
-// PASSWORD PROTECTION
-// ══════════════════════════════════════════
-const STORAGE_AUTH = 'stgames_auth_v1';
-const AUTH_HASH_KEY = 'stgames_pw_hash';
-
-async function hashPassword(pw) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-async function checkAuth() {
-  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
-  // First launch — no password set yet, show setup
-  if (!storedHash) {
-    showPasswordSetup();
-    return;
-  }
-  // Already authed this session?
-  if (sessionStorage.getItem(STORAGE_AUTH) === 'ok') {
-    document.getElementById('auth-overlay').style.display = 'none';
-    return;
-  }
-  document.getElementById('auth-overlay').style.display = 'flex';
-  document.getElementById('auth-setup').style.display = 'none';
-  document.getElementById('auth-login').style.display = 'block';
-  setTimeout(() => document.getElementById('auth-pw-input').focus(), 100);
-}
-
-function showPasswordSetup() {
-  document.getElementById('auth-overlay').style.display = 'flex';
-  document.getElementById('auth-login').style.display = 'none';
-  document.getElementById('auth-setup').style.display = 'block';
-  setTimeout(() => document.getElementById('auth-setup-pw').focus(), 100);
-}
-
-async function submitLogin() {
-  const pw = document.getElementById('auth-pw-input').value;
-  const hash = await hashPassword(pw);
-  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
-  if (hash === storedHash) {
-    sessionStorage.setItem(STORAGE_AUTH, 'ok');
-    document.getElementById('auth-overlay').style.display = 'none';
-    document.getElementById('auth-pw-input').value = '';
-    document.getElementById('auth-error').style.display = 'none';
-  } else {
-    const errEl = document.getElementById('auth-error');
-    errEl.textContent = 'Неверный пароль';
-    errEl.style.display = 'block';
-    document.getElementById('auth-pw-input').value = '';
-    document.getElementById('auth-pw-input').focus();
-  }
-}
-
-async function submitSetup() {
-  const pw = document.getElementById('auth-setup-pw').value.trim();
-  const pw2 = document.getElementById('auth-setup-pw2').value.trim();
-  const errEl = document.getElementById('auth-setup-error');
-  if (!pw) { errEl.textContent = 'Введите пароль'; errEl.style.display = 'block'; return; }
-  if (pw !== pw2) { errEl.textContent = 'Пароли не совпадают'; errEl.style.display = 'block'; return; }
-  const hash = await hashPassword(pw);
-  localStorage.setItem(AUTH_HASH_KEY, hash);
-  sessionStorage.setItem(STORAGE_AUTH, 'ok');
-  document.getElementById('auth-overlay').style.display = 'none';
-}
-
-checkAuth();
-</script>
 </body>
 </html>
