@@ -604,7 +604,6 @@ body {
       </div>
 
       <button class="reset-filters" onclick="resetFilters()">↺ Сбросить фильтры</button>
-      <button class="reset-filters" id="itad-key-btn" onclick="openItadModal()" style="margin-top:4px;border-color:var(--accent);color:var(--accent)" title="Настроить ITAD API ключ для исторических цен">🔑 ITAD API ключ</button>
     </div>
 
     <div class="filter-sep"></div>
@@ -686,6 +685,13 @@ body {
       placeholder="https://store.steampowered.com/app/330020/..."
       onkeydown="if(event.key==='Enter')addGame()">
     <div class="modal-hint">Вставьте ссылку на игру из Steam Store</div>
+    <div style="margin-top:10px">
+      <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Минимальная цена за всё время (₴) <span style="opacity:.5;font-size:11px">— необязательно</span></label>
+      <input type="number" class="modal-input" id="game-min-price"
+        placeholder="Например: 134 (цена во время лучшей скидки)"
+        min="0" step="1" style="margin-top:0"
+        onkeydown="if(event.key==='Enter')addGame()">
+    </div>
     <div class="modal-error" id="add-error"></div>
     <div class="modal-btns">
       <button class="modal-btn" onclick="closeAddModal()">Отмена</button>
@@ -697,34 +703,6 @@ body {
 </div>
 
 
-<!-- ITAD KEY MODAL -->
-<div id="itad-modal-overlay" onclick="if(event.target===this)closeItadModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
-  <div class="modal" style="max-width:460px">
-    <h2>🔑 ITAD API ключ</h2>
-    <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6">
-      Для отображения <strong>исторических минимальных цен</strong> нужен бесплатный ключ от <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">IsThereAnyDeal</a>.<br><br>
-      <strong style="color:var(--text)">Как получить (30 сек):</strong><br>
-      1. Открой <a href="https://isthereanydeal.com/apps/my/" target="_blank" style="color:var(--accent)">isthereanydeal.com/apps/my/</a><br>
-      2. Войди / зарегистрируйся → «Create app» → любое название<br>
-      3. Скопируй <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">API Key</code> сюда
-    </p>
-    <input type="text" class="modal-input" id="itad-key-input" placeholder="Вставьте API ключ..." style="font-family:var(--font-mono);font-size:13px">
-    <div class="modal-error" id="itad-error"></div>
-    <div class="modal-btns">
-      <button class="modal-btn" onclick="closeItadModal()">Отмена</button>
-      <button class="modal-btn" style="background:rgba(248,81,73,.15);border-color:var(--red2);color:var(--red)" onclick="clearItadKey()">Удалить ключ</button>
-      <button class="modal-btn confirm" onclick="saveItadKey()">Сохранить</button>
-    </div>
-    <div id="itad-diag-section" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;display:none">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">🧪 Диагностика — протестируй ключ на конкретной игре:</div>
-      <div style="display:flex;gap:6px;margin-bottom:8px">
-        <input type="text" id="itad-diag-appid" class="modal-input" placeholder="AppID игры (например 627270)" style="font-size:12px;padding:6px 10px;margin:0;flex:1">
-        <button class="modal-btn confirm" style="padding:6px 12px;font-size:12px;flex-shrink:0" onclick="itadRunDiag()">Тест</button>
-      </div>
-      <pre id="itad-diag-output" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:11px;font-family:var(--font-mono);color:var(--text2);white-space:pre-wrap;margin:0;max-height:140px;overflow-y:auto;display:none"></pre>
-    </div>
-  </div>
-</div>
 
 <!-- BALANCE MODAL -->
 <div id="balance-modal-overlay" onclick="if(event.target===this)closeBalanceModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;">
@@ -765,10 +743,8 @@ let sortBy = '';
 let sortDir = 1;
 let cartOpen = false;
 let filteredIds = null; // null = no active filter, show all
-let itadKey = '';
 
 const STORAGE_GAMES = 'stgames_v2';
-const STORAGE_ITAD_KEY = 'stgames_itad_key';
 const STORAGE_CART = 'stcart_v2';
 const STORAGE_BALANCE = 'stbalance_v2';
 
@@ -780,7 +756,6 @@ function save() {
     localStorage.setItem(STORAGE_GAMES, JSON.stringify(games));
     localStorage.setItem(STORAGE_CART, JSON.stringify(cart));
     localStorage.setItem(STORAGE_BALANCE, JSON.stringify(balance));
-    if (itadKey) localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
   } catch(e) {}
 }
 function load() {
@@ -791,7 +766,6 @@ function load() {
     if (g) games = JSON.parse(g);
     if (c) cart = JSON.parse(c);
     if (b) balance = parseFloat(JSON.parse(b)) || 0;
-    const k = localStorage.getItem(STORAGE_ITAD_KEY); if (k) itadKey = k;
   } catch(e) {}
 }
 
@@ -950,21 +924,9 @@ async function buildGameObject(appid) {
   const reviewScore = spyData
     ? calcReviewScore(spyData.positive || 0, spyData.negative || 0)
     : null;
+  const totalReviews = spyData ? ((spyData.positive || 0) + (spyData.negative || 0)) : null;
 
   const image = `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`;
-
-  // Fetch ITAD history low on add if key is available
-  let lowestPrice = price.current;
-  let itadLow = null;
-  if (itadKey) {
-    try {
-      const uah = await fetchAndUpdateHistoryLow({ appid: String(appid) });
-      if (uah != null) {
-        itadLow = uah;
-        if (lowestPrice == null || uah < lowestPrice) lowestPrice = uah;
-      }
-    } catch(e) {}
-  }
 
   return {
     appid:      String(appid),
@@ -975,149 +937,12 @@ async function buildGameObject(appid) {
     genres,
     editions,
     reviewScore,
+    totalReviews,
     reviewInfo: reviewScore ? reviewScoreClass(reviewScore) : null,
-    lowestPrice,
-    itadLow,
+    lowestPrice: price.current,
     addedAt:    Date.now(),
     lastUpdated: Date.now(),
   };
-}
-
-// ══════════════════════════════════════════
-// ITAD — Historical Low (requires free API key)
-// Register at: https://isthereanydeal.com/apps/my/
-// ══════════════════════════════════════════
-
-// ── ITAD helpers ─────────────────────────────────────────────────────────
-// Strategy: try multiple CORS proxies for GET requests to ITAD.
-// All ITAD endpoints used here are GET — no POST needed.
-
-async function itadProxyGet(url) {
-  const proxies = [
-    async (u) => {
-      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`);
-      if (!r.ok) throw new Error(`corsproxy ${r.status}`);
-      return await r.json();
-    },
-    async (u) => {
-      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`);
-      if (!r.ok) throw new Error(`allorigins ${r.status}`);
-      const w = await r.json();
-      if (!w?.contents || w.contents.startsWith('Oops') || w.contents.startsWith('<')) throw new Error('blocked');
-      return JSON.parse(w.contents);
-    },
-  ];
-  for (const proxy of proxies) {
-    try { return await proxy(url); } catch(e) { continue; }
-  }
-  throw new Error('All proxies failed');
-}
-
-// POST via corsproxy.io — works for ITAD endpoints that require POST
-async function itadProxyPost(url, body) {
-  const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`corsproxy POST ${r.status}`);
-  return await r.json();
-}
-
-// Step 1: lookup ITAD UUID by Steam AppID
-async function itadLookupId(appid) {
-  if (!itadKey) return null;
-  try {
-    const url = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
-    const d = await itadProxyGet(url);
-    if (!d || !d.found || !d.game) return null;
-    return d.game.id;
-  } catch(e) { return null; }
-}
-
-// Step 2: get historyLow via /games/overview/v2 (POST, body = array of UUIDs)
-// Returns array of game objects with historyLow: { all, y1, m3 } each { amount, currency }
-async function itadHistoryLow(itadId, country = 'UA') {
-  if (!itadKey || !itadId) return null;
-  try {
-    const url = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=${country}`;
-    const data = await itadProxyPost(url, [itadId]);
-    if (!Array.isArray(data) || !data[0]) return null;
-    const hl = data[0].historyLow;
-    if (!hl) return null;
-    // Prefer y1 (1-year low), fall back to all-time
-    return hl.y1 ?? hl.all ?? null;
-  } catch(e) { return null; }
-}
-
-// Convert ITAD amount to UAH
-function toUah(amount, currency) {
-  if (amount == null) return null;
-  if (!currency || currency === 'UAH') return Math.round(amount);
-  const rates = { USD: 41, EUR: 45, GBP: 52, PLN: 10, CZK: 1.8, TRY: 1.2 };
-  return Math.round(amount * (rates[currency] || 41));
-}
-
-// Main entry: lookup game + get historical low → UAH
-async function fetchAndUpdateHistoryLow(game) {
-  if (!itadKey) return null;
-  const itadId = await itadLookupId(game.appid);
-  if (!itadId) return null;
-  const low = await itadHistoryLow(itadId);
-  if (!low) return null;
-  return toUah(low.amount, low.currency);
-}
-
-// ── ITAD diagnostics (called from ITAD modal) ──────────────────────────────
-async function runItadDiagnostic(appid) {
-  const log = [];
-  log.push(`🔍 AppID: ${appid}, Key: ${itadKey ? itadKey.slice(0,8)+'…' : 'НЕТ'}`);
-  if (!itadKey) return log.join('\n') + '\n❌ Ключ не задан';
-
-  // Test each proxy in order and show which one works
-  log.push('⏳ Тестирование прокси...');
-  const lookupUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${itadKey}&appid=${appid}`;
-  const proxyTests = [
-    { name: 'corsproxy.io', fn: async (u) => { const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); return await r.json(); } },
-    { name: 'allorigins.win', fn: async (u) => { const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); const w = await r.json(); if (!w?.contents || w.contents.startsWith('Oops')) throw new Error('blocked'); return JSON.parse(w.contents); } },
-    { name: 'corsproxy.dev', fn: async (u) => { const r = await fetch(`https://corsproxy.dev/?${encodeURIComponent(u)}`); if (!r.ok) throw new Error(r.status); return await r.json(); } },
-  ];
-  let workingProxy = null;
-  for (const pt of proxyTests) {
-    try {
-      const d = await pt.fn(lookupUrl);
-      log.push(`✅ ${pt.name}: OK → found=${d?.found}, game=${JSON.stringify(d?.game)}`);
-      if (d?.found && d?.game) workingProxy = { name: pt.name, data: d };
-      break;
-    } catch(e) { log.push(`❌ ${pt.name}: ${e.message}`); }
-  }
-  if (!workingProxy) return log.join('\n') + '\n❌ Все прокси заблокированы или ключ неверен';
-  const itadId = workingProxy.data.game.id;
-  log.push(`✅ UUID: ${itadId}`);
-
-  log.push('⏳ History low (overview/v2 POST)...');
-  try {
-    const urlUA = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA`;
-    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(urlUA)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify([itadId]),
-    });
-    log.push(`POST UA status: ${r.status}`);
-    if (r.ok) {
-      const data = await r.json();
-      log.push(`📦 UA: ${JSON.stringify(data).slice(0, 600)}`);
-      const hl = data?.[0]?.historyLow;
-      if (hl) {
-        const low = hl.y1 ?? hl.all;
-        log.push(`✅ historyLow.y1=${JSON.stringify(hl.y1)} all=${JSON.stringify(hl.all)}`);
-        log.push(`✅ Result: ${low?.amount} ${low?.currency} → ${toUah(low?.amount, low?.currency)} ₴`);
-      } else {
-        log.push('⚠️ historyLow is null/missing in response');
-      }
-    }
-  } catch(e) { log.push(`❌ POST error: ${e.message}`); }
-  return log.join('\n');
 }
 
 // ══════════════════════════════════════════
@@ -1126,6 +951,7 @@ async function runItadDiagnostic(appid) {
 function openAddModal() {
   document.getElementById('modal-overlay').classList.add('open');
   document.getElementById('game-input').value = '';
+  document.getElementById('game-min-price').value = '';
   document.getElementById('add-error').style.display = 'none';
   document.getElementById('add-btn-text').textContent = 'Добавить';
   document.getElementById('add-confirm-btn').disabled = false;
@@ -1171,6 +997,7 @@ async function addGame() {
   }
 
   document.getElementById('add-btn-text').textContent = 'Загрузка...';
+  const manualMinPrice = parseFloat(document.getElementById('game-min-price').value) || null;
   const game = await buildGameObject(appid);
 
   if (!game) {
@@ -1181,6 +1008,10 @@ async function addGame() {
     return;
   }
 
+  if (manualMinPrice != null && game) {
+    game.lowestPrice = (game.price.current != null && game.price.current < manualMinPrice) ? game.price.current : manualMinPrice;
+    game.manualLow = manualMinPrice;
+  }
   games.push(game);
   save();
   closeAddModal();
@@ -1188,85 +1019,6 @@ async function addGame() {
 }
 
 
-// ══════════════════════════════════════════
-// ITAD KEY MODAL
-// ══════════════════════════════════════════
-function openItadModal() {
-  document.getElementById('itad-modal-overlay').style.display = 'flex';
-  const inp = document.getElementById('itad-key-input');
-  inp.value = itadKey || '';
-  document.getElementById('itad-error').style.display = 'none';
-  document.getElementById('itad-diag-section').style.display = itadKey ? 'block' : 'none';
-  document.getElementById('itad-diag-output').style.display = 'none';
-  updateItadKeyBtn();
-  setTimeout(() => inp.focus(), 50);
-}
-
-async function itadRunDiag() {
-  const appid = document.getElementById('itad-diag-appid').value.trim() || '627270';
-  const out = document.getElementById('itad-diag-output');
-  out.style.display = 'block';
-  out.textContent = '⏳ Выполняется диагностика...';
-  const result = await runItadDiagnostic(appid);
-  out.textContent = result;
-}
-function closeItadModal() {
-  document.getElementById('itad-modal-overlay').style.display = 'none';
-}
-function clearItadKey() {
-  itadKey = '';
-  localStorage.removeItem(STORAGE_ITAD_KEY);
-  document.getElementById('itad-key-input').value = '';
-  updateItadKeyBtn();
-  closeItadModal();
-}
-async function saveItadKey() {
-  const val = document.getElementById('itad-key-input').value.trim();
-  const errEl = document.getElementById('itad-error');
-  errEl.style.display = 'none';
-  if (!val) { clearItadKey(); closeItadModal(); return; }
-  // Quick validation: try a lookup
-  errEl.textContent = 'Проверка ключа...';
-  errEl.style.display = 'block';
-  errEl.style.color = 'var(--text2)';
-  try {
-    const testUrl = `https://api.isthereanydeal.com/games/lookup/v1?key=${val}&appid=730`;
-    const d = await fetchWithProxy(testUrl);
-    if (d && (d.found !== undefined)) {
-      itadKey = val;
-      localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
-      updateItadKeyBtn();
-      errEl.textContent = '✅ Ключ сохранён и проверен!';
-      errEl.style.color = 'var(--green)';
-      errEl.style.display = 'block';
-      document.getElementById('itad-diag-section').style.display = 'block';
-      setTimeout(closeItadModal, 1200);
-    } else {
-      errEl.textContent = 'Ключ не валиден. Проверьте и попробуйте снова.';
-      errEl.style.color = 'var(--red)';
-    }
-  } catch(e) {
-    errEl.textContent = 'Ошибка проверки. Ключ сохранён как есть.';
-    errEl.style.color = 'var(--yellow)';
-    itadKey = val;
-    localStorage.setItem(STORAGE_ITAD_KEY, itadKey);
-    updateItadKeyBtn();
-    setTimeout(closeItadModal, 1500);
-  }
-}
-function updateItadKeyBtn() {
-  const btn = document.getElementById('itad-key-btn');
-  if (!btn) return;
-  if (itadKey) {
-    btn.textContent = '✅ ITAD ключ активен';
-    btn.style.borderColor = 'var(--green)';
-    btn.style.color = 'var(--green)';
-  } else {
-    btn.innerHTML = '🔑 ITAD API ключ';
-    btn.style.borderColor = 'var(--accent)';
-    btn.style.color = 'var(--accent)';
-  }
-}
 
 // ══════════════════════════════════════════
 // BALANCE MODAL
@@ -1455,18 +1207,19 @@ function renderGames() {
       priceHtml = `<span class="price-current">—</span>`;
     } else {
       const disc = g.price.discount > 0;
+      const hasManualLow = g.lowestPrice != null && g.lowestPrice < g.price.current;
       if (showLowest) {
-        const minPrice = (g.lowestPrice != null && g.lowestPrice <= g.price.current) ? g.lowestPrice : g.price.current;
+        // Show min price as primary, current as secondary
+        const minPrice = g.lowestPrice != null ? g.lowestPrice : g.price.current;
         const isDifferent = minPrice < g.price.current;
-        const source = g.itadLow != null ? 'ITAD (мин. за год)' : 'с момента добавления';
         priceHtml = `
           <div class="card-price-row">
-            <span class="price-discount-badge" style="background:var(--teal)" title="Мин. цена ${source}">МИН</span>
+            <span class="price-discount-badge" style="background:var(--teal)">МИН</span>
             <span class="price-current">${formatPrice(minPrice)}</span>
           </div>
           ${isDifferent
             ? `<div class="price-lowest">Сейчас: <span>${formatPrice(g.price.current)}${disc ? ` (-${g.price.discount}%)` : ''}</span></div>`
-            : `<div class="price-lowest" style="color:var(--green);opacity:.8">✓ сейчас минимум <span style="font-size:9px;opacity:.7">(${source})</span></div>`
+            : `<div class="price-lowest" style="color:var(--green);opacity:.8">✓ текущая цена = минимуму</div>`
           }
         `;
       } else {
@@ -1476,7 +1229,7 @@ function renderGames() {
             <span class="price-current">${formatPrice(g.price.current)}</span>
             ${disc ? `<span class="price-original">${formatPrice(g.price.original)}</span>` : ''}
           </div>
-          ${g.lowestPrice != null && g.lowestPrice < g.price.current ? `<div class="price-lowest">Мин. цена: <span>${formatPrice(g.lowestPrice)}</span></div>` : ''}
+          ${hasManualLow ? `<div class="price-lowest">Мин. цена: <span>${formatPrice(g.lowestPrice)}</span></div>` : ''}
         `;
       }
     }
@@ -1496,10 +1249,14 @@ function renderGames() {
     let reviewHtml = '';
     if (g.reviewScore) {
       const ri = g.reviewInfo || reviewScoreClass(g.reviewScore);
+      const totalReviews = g.totalReviews;
+      const reviewCount = totalReviews != null
+        ? (totalReviews >= 1000 ? (totalReviews/1000).toFixed(1)+'k' : totalReviews)
+        : g.reviewScore;
       reviewHtml = `<div class="card-review">
         <span class="review-dot" style="background:${ri.color}"></span>
         <span style="font-size:10px;color:${ri.color}">${ri.label}</span>
-        <span style="font-size:10px;color:var(--text3)">(${g.reviewScore})</span>
+        <span style="font-size:10px;color:var(--text3)">(${reviewCount})</span>
       </div>`;
     }
 
@@ -1640,27 +1397,13 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
           ? { current: 0, original: 0, discount: 0, free: true }
           : parsePriceFromStore(storeData.price_overview);
         games[i].price = price;
-        if (price.current != null && (games[i].lowestPrice == null || price.current < games[i].lowestPrice)) {
-          games[i].lowestPrice = price.current;
-        }
         if (storeData.package_groups) {
           games[i].editions = parseEditionsFromStore(storeData.package_groups);
         }
         games[i].lastUpdated = Date.now();
       }
     } catch(e) {}
-    // Fetch ITAD historical low if key is set
-    if (itadKey) {
-      try {
-        const uah = await fetchAndUpdateHistoryLow(games[i]);
-        if (uah != null) {
-          games[i].itadLow = uah;
-          if (games[i].lowestPrice == null || uah < games[i].lowestPrice) {
-            games[i].lowestPrice = uah;
-          }
-        }
-      } catch(e) {}
-    }
+
 
     done++;
     bar.style.width = (done / total * 100) + '%';
@@ -1683,7 +1426,101 @@ load();
 filteredIds = null;
 renderGames();
 updateBalanceUI();
-updateItadKeyBtn();
+</script>
+
+<!-- AUTH OVERLAY -->
+<div id="auth-overlay" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:0">
+  <!-- Login form -->
+  <div id="auth-login" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:320px;display:none">
+    <h2 style="font-family:var(--font-head);font-size:20px;margin-bottom:6px;text-align:center">🔒 Steam Tracker</h2>
+    <p style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:20px">Введите пароль для доступа</p>
+    <input type="password" id="auth-pw-input" class="modal-input" placeholder="Пароль..."
+      style="margin-bottom:10px" onkeydown="if(event.key==='Enter')submitLogin()">
+    <div class="modal-error" id="auth-error" style="margin-bottom:10px"></div>
+    <button class="modal-btn confirm" style="width:100%" onclick="submitLogin()">Войти</button>
+  </div>
+  <!-- First-time setup -->
+  <div id="auth-setup" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:340px;display:none">
+    <h2 style="font-family:var(--font-head);font-size:20px;margin-bottom:6px;text-align:center">🛡️ Защита страницы</h2>
+    <p style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:20px;line-height:1.6">Первый запуск — установите пароль.<br>Он хранится только в вашем браузере.</p>
+    <input type="password" id="auth-setup-pw" class="modal-input" placeholder="Придумайте пароль..."
+      style="margin-bottom:8px" onkeydown="if(event.key==='Enter')document.getElementById('auth-setup-pw2').focus()">
+    <input type="password" id="auth-setup-pw2" class="modal-input" placeholder="Повторите пароль..."
+      style="margin-bottom:10px" onkeydown="if(event.key==='Enter')submitSetup()">
+    <div class="modal-error" id="auth-setup-error" style="margin-bottom:10px"></div>
+    <button class="modal-btn confirm" style="width:100%" onclick="submitSetup()">Установить пароль</button>
+  </div>
+</div>
+
+<script type="module">
+
+// ══════════════════════════════════════════
+// PASSWORD PROTECTION
+// ══════════════════════════════════════════
+const STORAGE_AUTH = 'stgames_auth_v1';
+const AUTH_HASH_KEY = 'stgames_pw_hash';
+
+async function hashPassword(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkAuth() {
+  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
+  // First launch — no password set yet, show setup
+  if (!storedHash) {
+    showPasswordSetup();
+    return;
+  }
+  // Already authed this session?
+  if (sessionStorage.getItem(STORAGE_AUTH) === 'ok') {
+    document.getElementById('auth-overlay').style.display = 'none';
+    return;
+  }
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('auth-setup').style.display = 'none';
+  document.getElementById('auth-login').style.display = 'block';
+  setTimeout(() => document.getElementById('auth-pw-input').focus(), 100);
+}
+
+function showPasswordSetup() {
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('auth-login').style.display = 'none';
+  document.getElementById('auth-setup').style.display = 'block';
+  setTimeout(() => document.getElementById('auth-setup-pw').focus(), 100);
+}
+
+async function submitLogin() {
+  const pw = document.getElementById('auth-pw-input').value;
+  const hash = await hashPassword(pw);
+  const storedHash = localStorage.getItem(AUTH_HASH_KEY);
+  if (hash === storedHash) {
+    sessionStorage.setItem(STORAGE_AUTH, 'ok');
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('auth-pw-input').value = '';
+    document.getElementById('auth-error').style.display = 'none';
+  } else {
+    const errEl = document.getElementById('auth-error');
+    errEl.textContent = 'Неверный пароль';
+    errEl.style.display = 'block';
+    document.getElementById('auth-pw-input').value = '';
+    document.getElementById('auth-pw-input').focus();
+  }
+}
+
+async function submitSetup() {
+  const pw = document.getElementById('auth-setup-pw').value.trim();
+  const pw2 = document.getElementById('auth-setup-pw2').value.trim();
+  const errEl = document.getElementById('auth-setup-error');
+  if (!pw) { errEl.textContent = 'Введите пароль'; errEl.style.display = 'block'; return; }
+  if (pw !== pw2) { errEl.textContent = 'Пароли не совпадают'; errEl.style.display = 'block'; return; }
+  const hash = await hashPassword(pw);
+  localStorage.setItem(AUTH_HASH_KEY, hash);
+  sessionStorage.setItem(STORAGE_AUTH, 'ok');
+  document.getElementById('auth-overlay').style.display = 'none';
+}
+
+checkAuth();
 </script>
 </body>
 </html>
