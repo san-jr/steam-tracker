@@ -1062,10 +1062,16 @@ async function runItadDiagnostic(appid) {
   if (!itadId) return log.join('\n') + '\n❌ UUID не найден — игра неизвестна ITAD или ключ неверный';
   log.push(`✅ UUID: ${itadId}`);
 
-  log.push('⏳ History low (overview/v2)...');
-  const low = await itadHistoryLow(itadId);
-  if (!low) return log.join('\n') + '\n❌ История цен не получена — нет данных UA для этой игры\n💡 Попробуй country=US в диагностике';
-  log.push(`✅ Low: ${low.amount} ${low.currency} → ${toUah(low.amount, low.currency)} ₴`);
+  log.push('⏳ History low (overview/v2, UA)...');
+  // Debug: fetch raw response to see exact structure
+  try {
+    const urlUA = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=UA&id[]=${itadId}`;
+    const rawUA = await itadProxyGet(urlUA);
+    log.push(`📦 Raw UA: ${JSON.stringify(rawUA).slice(0, 400)}`);
+    const urlUS = `https://api.isthereanydeal.com/games/overview/v2?key=${itadKey}&country=US&id[]=${itadId}`;
+    const rawUS = await itadProxyGet(urlUS);
+    log.push(`📦 Raw US: ${JSON.stringify(rawUS).slice(0, 400)}`);
+  } catch(e) { log.push(`❌ Raw fetch error: ${e.message}`); }
   return log.join('\n');
 }
 
