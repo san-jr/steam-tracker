@@ -1358,13 +1358,17 @@ function renderGames() {
       const disc = g.price.discount > 0;
       if (showLowest) {
         const minPrice = (g.lowestPrice != null && g.lowestPrice <= g.price.current) ? g.lowestPrice : g.price.current;
-        const isDifferent = minPrice !== g.price.current;
+        const isDifferent = minPrice < g.price.current;
+        const source = g.itadLow != null ? 'ITAD (мин. за год)' : 'с момента добавления';
         priceHtml = `
           <div class="card-price-row">
-            <span class="price-discount-badge" style="background:var(--teal)" title="${g.itadLow != null ? 'Данные ITAD (мин. за год)' : 'Мин. цена с момента добавления'}">МИН</span>
+            <span class="price-discount-badge" style="background:var(--teal)" title="Мин. цена ${source}">МИН</span>
             <span class="price-current">${formatPrice(minPrice)}</span>
           </div>
-          ${isDifferent ? `<div class="price-lowest">Сейчас: <span>${formatPrice(g.price.current)}${disc ? ` (-${g.price.discount}%)` : ''}</span></div>` : ''}
+          ${isDifferent
+            ? `<div class="price-lowest">Сейчас: <span>${formatPrice(g.price.current)}${disc ? ` (-${g.price.discount}%)` : ''}</span></div>`
+            : `<div class="price-lowest" style="color:var(--green);opacity:.8">✓ сейчас минимум <span style="font-size:9px;opacity:.7">(${source})</span></div>`
+          }
         `;
       } else {
         priceHtml = `
